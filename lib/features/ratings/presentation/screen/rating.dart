@@ -13,26 +13,18 @@ class Rating extends StatefulWidget {
 }
 
 class _RatingState extends State<Rating> {
-// NEW, DYNAMIC VARIABLES
-// For the current user (the one rating)
   String? currentUserName;
   String? currentUserRole;
-
-// For the first person they can rate
   String? person1Name;
   String? person1Id;
   String? person1Role;double rating1 = 0;
   TextEditingController feedback1 = TextEditingController();
-
-// For the second person they can rate
   String? person2Name;
   String? person2Id;
   String? person2Role;
   double rating2 = 0;
   TextEditingController feedback2 = TextEditingController();
-
   bool isLoading = true;
-
   final _client = Supabase.instance.client;
 
   //Submit rating part below
@@ -66,12 +58,24 @@ class _RatingState extends State<Rating> {
 
     final shipmentResponse = await _client
         .from('shipment')
-        .select('assigned_driver, assigned_agent, shipper_id')
+        .select('assigned_driver, assigned_agent, shipper_id, delivery_date')
         .eq('shipment_id', shipmentId)
         .maybeSingle();
 
     if (shipmentResponse == null) {
       throw Exception(tr("error_shipment_not_found"));
+    }
+
+    final deliveryDate = DateTime.tryParse(
+      shipmentResponse['delivery_date'] ?? '',
+    );
+
+    final bool isRatingPeriodExpired =
+        deliveryDate != null &&
+            DateTime.now().isAfter(deliveryDate.add(const Duration(days: 7)));
+
+    if (isRatingPeriodExpired) {
+      throw Exception('ratingPeriodExpired'.tr());
     }
 
     final driverId = shipmentResponse['assigned_driver'] as String?;
@@ -224,36 +228,26 @@ class _RatingState extends State<Rating> {
       fetchExistingRating();
     });
   }
-
-  // Replace the entire _fetchNames method with this new version
   Future<void> _fetchNames() async {
     try {
       final userId = _client.auth.currentUser?.id;
       if (userId == null) throw Exception(tr("error_no_logged_in_user"));
-
-      // 1. Fetch current user's profile
       final currentProfile = await _client
           .from('user_profiles')
           .select('custom_user_id, name, role')
           .eq('user_id', userId)
           .single();
-
       currentUserName = currentProfile['name'];
       currentUserRole = (currentProfile['role'] as String?)?.trim().toLowerCase();
       final currentUserCustomId = currentProfile['custom_user_id'];
-
-      // 2. Fetch all IDs and Names related to the shipment
       final shipment = await _client
           .from('shipment')
           .select('shipper_id, assigned_driver, assigned_agent')
           .eq('shipment_id', widget.shipmentId)
           .single();
-
       final shipperId = shipment['shipper_id'] as String?;
       final driverId = shipment['assigned_driver'] as String?;
       final assignedId = shipment['assigned_agent'] as String?;
-
-      // Helper to get name from ID
       Future<String?> getName(String? id) async {
         if (id == null) return null;
         final profile = await _client
@@ -263,19 +257,14 @@ class _RatingState extends State<Rating> {
             .maybeSingle();
         return profile?['name'];
       }
-
       final shipperName = await getName(shipperId);
       final driverName = await getName(driverId);
       final assignedName = await getName(assignedId);
-
-      // 3. Use the switch to assign roles dynamically
       switch (currentUserRole) {
         case 'shipper':
           person1Name = driverName;
           person1Id = driverId;
           person1Role = tr('driver');
-
-          // A shipper doesn't rate themselves, so check if agent is someone else
           if (assignedId != null && assignedId != currentUserCustomId) {
             person2Name = assignedName;
             person2Id = assignedId;
@@ -287,8 +276,6 @@ class _RatingState extends State<Rating> {
           person1Name = driverName;
           person1Id = driverId;
           person1Role = tr('driver');
-
-          // An agent doesn't rate themselves
           if (shipperId != null && shipperId != currentUserCustomId) {
             person2Name = shipperName;
             person2Id = shipperId;
@@ -300,8 +287,6 @@ class _RatingState extends State<Rating> {
           person1Name = driverName;
           person1Id = driverId;
           person1Role = tr('driver');
-
-          // An truckowner doesn't rate themselves
           if (shipperId != null && shipperId != currentUserCustomId) {
             person2Name = shipperName;
             person2Id = shipperId;
@@ -313,8 +298,6 @@ class _RatingState extends State<Rating> {
           person1Name = shipperName;
           person1Id = shipperId;
           person1Role = tr('shipper');
-
-          // A driver doesn't rate same person
           if (assignedId != null && assignedId != shipperId) {
             person2Name = assignedName;
             person2Id = assignedId;
@@ -355,10 +338,10 @@ class _RatingState extends State<Rating> {
           .eq('rater_id', currentUserCustomId);
 
       for (var r in existingRatings) {
-        if (r['ratee_id'] == person1Id) { // Check against person1Id
+        if (r['ratee_id'] == person1Id) {
           rating1 = (r['rating'] as num?)?.toDouble() ?? 0;
           feedback1.text = r['feedback'] ?? '';
-        } else if (r['ratee_id'] == person2Id) { // Check against person2Id
+        } else if (r['ratee_id'] == person2Id) {
           rating2 = (r['rating'] as num?)?.toDouble() ?? 0;
           feedback2.text = r['feedback'] ?? '';
         }
@@ -509,20 +492,18 @@ class _RatingState extends State<Rating> {
             const SizedBox(height: 10),
             Text("please_rate_your_experience".tr()),
             const Divider(height: 30),
-
-            // --- DYNAMIC RATING UI FOR PERSON 1 ---
             if (person1Name != null) ...[
-              Text("${tr("rate")} ${person1Name!} (${person1Role!})", // Display name and role
+              Text("${tr("rate")} ${person1Name!} (${person1Role!})",
                   style: const TextStyle(fontSize: 16)),
               RatingBar.builder(
-                initialRating: rating1, // Use rating1
+                initialRating: rating1,
                 minRating: 1,
                 itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
                 onRatingUpdate: (rating) => setState(() => rating1 = rating),
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: feedback1, // Use feedback1
+                controller: feedback1,
                 maxLines: 2,
                 decoration: InputDecoration(
                   labelText: "${'feedback_for'.tr() + person1Name!}",
@@ -531,23 +512,21 @@ class _RatingState extends State<Rating> {
               ),
               const SizedBox(height: 24),
             ],
-
-            // --- DYNAMIC RATING UI FOR PERSON 2 ---
             if (person2Name != null) ...[
-              Text("${tr("rate")} ${person2Name!} (${person2Role!})", // Display name and role
+              Text("${tr("rate")} ${person2Name!} (${person2Role!})",
                   style: const TextStyle(fontSize: 16)),
               RatingBar.builder(
-                initialRating: rating2, // Use rating2
+                initialRating: rating2,
                 minRating: 1,
                 itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
                 onRatingUpdate: (rating) => setState(() => rating2 = rating),
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: feedback2, // Use feedback2
+                controller: feedback2,
                 maxLines: 2,
                 decoration: InputDecoration(
-                  labelText: "${tr("feedback_for")} ${person2Name!}", // Dynamic label
+                  labelText: "${tr("feedback_for")} ${person2Name!}",
                   border: const OutlineInputBorder(),
                 ),
               ),

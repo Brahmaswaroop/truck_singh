@@ -165,10 +165,8 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
 
   void _initializeForm() {
     if (widget.bilty != null) {
-      // Edit mode - populate with existing data
       _populateFromExistingBilty();
     } else {
-      // New bilty - set default values
       _setDefaultValues();
     }
   }
@@ -265,13 +263,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
     });
   }
 
-  // final Map<String, TextEditingController> _controllers = {
-  //   'driver_name': TextEditingController(),
-  //   'driver_phone': TextEditingController(),
-  //   'driver_address': TextEditingController(),
-  //   'driver_license': TextEditingController(),
-  // };
-
   void _setDefaultValues() {
     // Generate bilty number
     _generateBiltyNumber();
@@ -312,7 +303,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            //color: Colors.grey.withAlpha((0.1 * 255).round()),
             color: Theme.of(context).shadowColor.withOpacity(0.1),
             spreadRadius: 1,
             blurRadius: 10,
@@ -331,7 +321,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
                   padding: EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    //color: AppColors.tealBlue.withAlpha((0.1 * 255).round()),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, color: AppColors.tealBlue, size: 20),
@@ -342,7 +331,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    //color: AppColors.tealBlue,
                   ),
                 ),
               ],
@@ -381,28 +369,23 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
           prefixIcon: Icon(icon, color: AppColors.tealBlue),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            //borderSide: BorderSide(color: Colors.grey.shade300),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            //borderSide: BorderSide(color: Colors.grey.shade300),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            // borderSide: BorderSide(color: AppColors.tealBlue, width: 2),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.red, width: 2),
           ),
           filled: true,
-          //fillColor: Colors.white,
           contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           // Ensure label is always visible
           floatingLabelBehavior: FloatingLabelBehavior.always,
           // Prevent label truncation
           labelStyle: TextStyle(
-            //color: Colors.grey.shade600,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -419,7 +402,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
   }) {
     String? formattedDate;
     if (value != null) {
-      // Format as dd/MM/yyyy
       formattedDate =
       '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
     }
@@ -435,7 +417,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              //color: Colors.grey.shade700,
             ),
           ),
           SizedBox(height: 6),
@@ -447,7 +428,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(12),
-                //color: Colors.white,
               ),
               child: Row(
                 children: [
@@ -592,7 +572,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
           _controllers['sender_email'] ??= TextEditingController();
           _controllers['sender_address'] ??= TextEditingController();
           _controllers['sender_gstin'] ??= TextEditingController();
-
           _controllers['sender_name']!.text = response['name'];
           _controllers['sender_phone']!.text = response['mobile_number'];
           _controllers['sender_email']!.text = response['email'];
@@ -763,8 +742,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
       }
     }
   }
-
-  //--------------- load addresses in route section -----------------
   Future<void> _loadRouteDetails(String shipmentId) async {
     if (shipmentId.isEmpty) return;
 
@@ -778,11 +755,8 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
       setState(() {
         _controllers['from_where'] ??= TextEditingController();
         _controllers['till_where'] ??= TextEditingController();
-
         _controllers['from_where']!.text = shipment['pickup'] ?? '';
         _controllers['till_where']!.text = shipment['drop'] ?? '';
-
-        // ✅ Convert Supabase date to String → parse into DateTime
         if (shipment['pickup_date'] != null) {
           _pickupDate = DateTime.tryParse(shipment['pickup_date'].toString());
         }
@@ -794,8 +768,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
       });
     }
   }
-
-  //-------------- loading company address to company address field -------------------
 
   Future<void> _loadCompanyAddress() async {
     final customUserId = Supabase
@@ -1030,7 +1002,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              //fillColor: Colors.grey.shade50,
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
@@ -1094,7 +1065,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
         );
       },
     ).whenComplete(() {
-      // Recompute amount in case fields changed elsewhere
       setState(() {});
     });
   }
@@ -1104,9 +1074,7 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        //color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(20),
-        //border: Border.all(color: Colors.grey.shade300),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1114,7 +1082,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
           Text(
             '$label: ',
             style: TextStyle(
-              //color: Colors.grey.shade700,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -2719,13 +2686,7 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
         ).showSnackBar(SnackBar(content: Text('user_not_authenticated'.tr())));
         return;
       }
-
-      // Export signatures as base64 strings
       final senderSignature = await _senderSignatureController.toPngBytes();
-      // final driverSignature = await _driverSignatureController.toPngBytes();
-      // final clerkSignature = await _clerkSignatureController.toPngBytes();
-
-      // Navigate to preview page with all entered data
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -2779,10 +2740,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
             senderSignature: senderSignature != null
                 ? base64Encode(senderSignature)
                 : null,
-            // driverSignature:
-            // driverSignature != null ? base64Encode(driverSignature) : null,
-            // clerkSignature:
-            // clerkSignature != null ? base64Encode(clerkSignature) : null,
             companyName: _companyNameController.text.isNotEmpty
                 ? _companyNameController.text
                 : null,
@@ -2809,9 +2766,6 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
       });
     }
   }
-
-  /// Returns the content widget for the current step.
-  /// This is the core of the optimization, ensuring only one step is built at a time.
   Widget _buildStepContent(int step) {
     switch (step) {
       case 0:
@@ -2846,15 +2800,11 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-
-      //backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: Text(
           widget.bilty != null ? 'edit_bilty'.tr() : 'create_new_bilty'.tr(),
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
-        //backgroundColor: AppColors.tealBlue,
-        //foregroundColor: Colors.white,
         elevation: 0,
         actions: [
           Container(
@@ -2871,146 +2821,148 @@ class _BiltyFormPageState extends State<BiltyFormPage> {
           ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            // Custom Step Header
-            Container(
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              //color: Colors.white,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: List.generate(_stepTitles.length, (index) {
-                    final isCompleted = index < _currentStep;
-                    final isActive = index == _currentStep;
-                    return InkWell(
-                      onTap: () => _pageController.animateToPage(
-                        index,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                        child: Column(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundColor: isActive
-                                  ? AppColors.tealBlue
-                                  : (isCompleted
-                                  ? Colors.green
-                                  : Colors.grey.shade300),
-                              child: isCompleted
-                                  ? Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 16,
-                              )
-                                  : Text(
-                                '${index + 1}',
-                                style: TextStyle(
-                                  color: isActive
-                                      ? Colors.white
-                                      : Colors.black54,
-                                  fontWeight: FontWeight.bold,
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              // Custom Step Header
+              Container(
+                color: Theme.of(context).cardColor,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                //color: Colors.white,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: List.generate(_stepTitles.length, (index) {
+                      final isCompleted = index < _currentStep;
+                      final isActive = index == _currentStep;
+                      return InkWell(
+                        onTap: () => _pageController.animateToPage(
+                          index,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          child: Column(
+                            children: [
+                              CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isActive
+                                    ? AppColors.tealBlue
+                                    : (isCompleted
+                                    ? Colors.green
+                                    : Colors.grey.shade300),
+                                child: isCompleted
+                                    ? Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 16,
+                                )
+                                    : Text(
+                                  '${index + 1}',
+                                  style: TextStyle(
+                                    color: isActive
+                                        ? Colors.white
+                                        : Colors.black54,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              _stepTitles[index],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isActive
-                                    ? AppColors.tealBlue
-                                    : Colors.grey.shade600,
-                                fontWeight: isActive
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
+                              SizedBox(height: 4),
+                              Text(
+                                _stepTitles[index],
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isActive
+                                      ? AppColors.tealBlue
+                                      : Colors.grey.shade600,
+                                  fontWeight: isActive
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }),
+                      );
+                    }),
+                  ),
                 ),
               ),
-            ),
-            // Step Content using PageView
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentStep = index;
-                  });
-                },
-                itemCount: _stepTitles.length,
-                itemBuilder: (context, index) {
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(16.0),
-                    child: _buildStepContent(index),
-                  );
-                },
+              // Step Content using PageView
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentStep = index;
+                    });
+                  },
+                  itemCount: _stepTitles.length,
+                  itemBuilder: (context, index) {
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(16.0),
+                      child: _buildStepContent(index),
+                    );
+                  },
+                ),
               ),
-            ),
-            // Navigation Buttons
-            Container(
-              color: Theme.of(context).cardColor,
-              padding: const EdgeInsets.all(16.0),
-              //color: Colors.white,
-              child: Row(
-                children: [
-                  if (_currentStep > 0)
+              // Navigation Buttons
+              Container(
+                color: Theme.of(context).cardColor,
+                padding: const EdgeInsets.all(16.0),
+                //color: Colors.white,
+                child: Row(
+                  children: [
+                    if (_currentStep > 0)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _previousStep,
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text('previous'.tr()),
+                        ),
+                      ),
+                    if (_currentStep > 0) SizedBox(width: 16),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: _previousStep,
+                        onPressed: _currentStep < _stepTitles.length - 1
+                            ? _nextStep
+                            : (_isLoading ? null : _submitBilty),
                         style: ElevatedButton.styleFrom(
                           padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: Text('previous'.tr()),
-                      ),
-                    ),
-                  if (_currentStep > 0) SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _currentStep < _stepTitles.length - 1
-                          ? _nextStep
-                          : (_isLoading ? null : _submitBilty),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        child:
+                        _isLoading && _currentStep == _stepTitles.length - 1
+                            ? SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            //color: Colors.white,
+                          ),
+                        )
+                            : Text(
+                          _currentStep < _stepTitles.length - 1
+                              ? 'next'.tr()
+                              : 'submit'.tr(),
                         ),
                       ),
-                      child:
-                      _isLoading && _currentStep == _stepTitles.length - 1
-                          ? SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          //color: Colors.white,
-                        ),
-                      )
-                          : Text(
-                        _currentStep < _stepTitles.length - 1
-                            ? 'next'.tr()
-                            : 'submit'.tr(),
-                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

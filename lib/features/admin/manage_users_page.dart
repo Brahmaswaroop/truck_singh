@@ -2,6 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:logistics_toolkit/features/disable/otp_activation_service.dart';
+import '../notifications/notification_service.dart';
 
 class ManageUsersPage extends StatefulWidget {
   const ManageUsersPage({super.key});
@@ -22,8 +23,8 @@ class _ManageUsersPageState extends State<ManageUsersPage>
     'All',
     'shipper',
     'truckowner',
-    'driver',        //remove driver_individual and driver_company
-    'agent',         //remove admin
+    'driver',
+    'agent',
   ];
 
   @override
@@ -104,13 +105,61 @@ class _ManageUsersPageState extends State<ManageUsersPage>
 
                         await toggleAccountStatusRpc(
                           customUserId:
-                          user['custom_user_id'], // the user being toggled
+                          user['custom_user_id'],
                           disabled:
-                          !isCurrentlyDisabled, // true = disable, false = enable
-                          changedBy: adminEmail, // who did it
-                          changedByRole: 'admin', // role
+                          !isCurrentlyDisabled,
+                          changedBy: adminEmail,
+                          changedByRole: 'admin',
                         );
 
+                        // --- UPDATED NOTIFICATION LOGIC ---
+                        if (!isCurrentlyDisabled) {
+                          // This means the user was just DISABLED
+                          final String disabledUserCustomId = user['custom_user_id'] ?? '';
+                          final String? adminCustomId = await NotificationService.getCurrentCustomUserId();
+                          final String disabledUserName = user['name'] ?? 'the user';
+
+                          // 1. Notify the user who was disabled
+                          NotificationService.sendPushNotificationToUser(
+                            recipientId: disabledUserCustomId,
+                            title: 'Account Disabled'.tr(),
+                            message: 'Your account has been disabled by an administrator.'.tr(),
+                            data: {'type': 'account_status'},
+                          );
+
+                          // 2. Notify the admin (self-notification)
+                          if (adminCustomId != null) {
+                            NotificationService.sendPushNotificationToUser(
+                              recipientId: adminCustomId,
+                              title: 'Action Confirmation'.tr(),
+                              message: 'You have successfully disabled the account for'.tr() + ' $disabledUserName.',
+                              data: {'type': 'admin_log'},
+                            );
+                          }
+                        } else {
+                          // This means the user was just ENABLED
+                          final String enabledUserCustomId = user['custom_user_id'] ?? '';
+                          final String? adminCustomId = await NotificationService.getCurrentCustomUserId();
+                          final String enabledUserName = user['name'] ?? 'the user';
+
+                          // 1. Notify the user who was enabled
+                          NotificationService.sendPushNotificationToUser(
+                            recipientId: enabledUserCustomId,
+                            title: 'Account Enabled'.tr(),
+                            message: 'Your account has been re-enabled by an administrator.'.tr(),
+                            data: {'type': 'account_status'},
+                          );
+
+                          // 2. Notify the admin (self-notification)
+                          if (adminCustomId != null) {
+                            NotificationService.sendPushNotificationToUser(
+                              recipientId: adminCustomId,
+                              title: 'Action Confirmation'.tr(),
+                              message: 'You have successfully enabled the account for'.tr() + ' $enabledUserName.',
+                              data: {'type': 'admin_log'},
+                            );
+                          }
+                        }
                         Navigator.pop(ctx, true);
                       } catch (e) {
                         setState(() => isProcessing = false);
@@ -434,7 +483,7 @@ class _ManageUsersPageState extends State<ManageUsersPage>
   }
 
   Color _getRoleColor(String? role) {
-    switch (role?.toLowerCase()) {  //remove the admin color
+    switch (role?.toLowerCase()) {
       case 'agent':
         return Colors.blue;
       case 'truckowner':
@@ -458,8 +507,6 @@ Future<void> toggleAccountStatusRpc({
   required String changedByRole,
 }) async {
   try {
-    // Instead of using RPC, directly update the user_profiles table
-    // This avoids the type mismatch issue in the database function
     await _supabase
         .from('user_profiles')
         .update({
@@ -467,8 +514,6 @@ Future<void> toggleAccountStatusRpc({
       'updated_at': DateTime.now().toIso8601String(),
     })
         .eq('custom_user_id', customUserId);
-
-    // Log the status change in account_status_log if the table exists
     try {
       await _supabase.from('account_status_log').insert({
         'custom_user_id': customUserId,
@@ -478,7 +523,6 @@ Future<void> toggleAccountStatusRpc({
         'changed_at': DateTime.now().toIso8601String(),
       });
     } catch (logError) {
-      // Ignore if log table doesn't exist
       print('Note: Could not log status change: $logError');
     }
   } catch (e) {

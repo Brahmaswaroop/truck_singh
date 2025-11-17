@@ -25,13 +25,30 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
     _loadNotifications();
   }
 
+
   Future<void> _loadNotifications() async {
+    if (!mounted) return;
     setState(() => isLoading = true);
+
+    final userId = supabase.auth.currentUser?.id;
+
+    if (userId == null) {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          notifications = [];
+        });
+        _refreshController.refreshFailed();
+        debugPrint("❌ No user logged in. Cannot fetch notifications.");
+      }
+      return;
+    }
 
     try {
       final response = await supabase
           .from('notifications')
           .select()
+          .eq('user_id', userId)
           .order('created_at', ascending: false);
 
       if (mounted) {
@@ -42,6 +59,7 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
         _refreshController.refreshCompleted();
       }
     } catch (e) {
+      debugPrint("❌ Error loading notifications: $e");
       if (mounted) {
         setState(() => isLoading = false);
       }
@@ -56,39 +74,77 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
   }
 
   Future<void> markAllAsRead() async {
-    await supabase
-        .from('notifications')
-        .update({'is_read': true})
-        .neq('is_read', true);
-    await _loadNotifications();
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final unreadIds = notifications
+        .where((n) => n['read'] != true)
+        .map((n) => n['id'] as String)
+        .toList();
+
+    if (unreadIds.isEmpty) return;
+
+    try {
+      await supabase
+          .from('notifications')
+          .update({'read': true})
+          .eq('user_id', userId)
+          .inFilter('id', unreadIds);
+
+      if (mounted) {
+        setState(() {
+          for (var notification in notifications) {
+            if (unreadIds.contains(notification['id'])) {
+              notification['read'] = true;
+            }
+          }
+        });
+      }
+    }catch (e) {
+      debugPrint("❌ Error marking all as read: $e");
+    }
   }
 
-  String _formatTimeAgo(DateTime time) {
-    final difference = DateTime.now().difference(time);
 
-    if (difference.inMinutes < 1) return 'just_now'.tr();
-    if (difference.inHours < 1) {
-      return tr("minutes_ago", args: ['${difference.inMinutes}']);
+  String _formatTimeAgo(String timeString) {
+    try {
+      final createdAt = DateTime.parse(timeString);
+      final localCreatedAt = createdAt.toLocal();
+      final difference = DateTime.now().difference(localCreatedAt);
+
+      if (difference.inSeconds < 60) {
+        return 'just_now'.tr();
+      }
+      if (difference.inMinutes < 60) {
+        final minutes = difference.inMinutes;
+        return "$minutes ${'minutes_ago'.tr().replaceAll('{0}', '').trim()}";
+      }
+      if (difference.inHours < 24) {
+        final hours = difference.inHours;
+        return "$hours ${'hours_ago'.tr().replaceAll('{0}', '').trim()}";
+      }
+      if (difference.inDays < 30) {
+        final days = difference.inDays;
+        return "$days ${'days_ago'.tr().replaceAll('{0}', '').trim()}";
+      }
+      if (difference.inDays < 365) {
+        final months = (difference.inDays / 30).floor();
+        return "$months ${'months_ago'.tr().replaceAll('{0}', '').trim()}";
+      }
+      final years = (difference.inDays / 365).floor();
+      return "$years ${'years_ago'.tr().replaceAll('{0}', '').trim()}";
+
+    } catch (e) {
+      debugPrint("❌ Error formatting time: $e");
+      return timeString;
     }
-    if (difference.inHours < 24) {
-      return tr("hours_ago", args: ['${difference.inHours}']);
-    }
-    if (difference.inDays < 30) {
-      return tr("days_ago", args: ['${difference.inDays}']);
-    }
-    if (difference.inDays < 365) {
-      final months = (difference.inDays / 30).floor();
-      return tr("months_ago", args: ['${months}']);
-    }
-    final years = (difference.inDays / 365).floor();
-    return tr("years_ago", args: ['${years}']);
   }
 
   @override
   Widget build(BuildContext context) {
     final filteredNotifications = showReadNotifications
         ? notifications
-        : notifications.where((n) => n['is_read'] == false).toList();
+        : notifications.where((n) => n['read'] != true).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -147,9 +203,9 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
           itemCount: filteredNotifications.length,
           itemBuilder: (context, index) {
             final notification = filteredNotifications[index];
-            final isRead = notification['is_read'] ?? false;
+            final isRead =  notification['read'] == true;
             final timestamp = DateTime.parse(notification['created_at']);
-            final timeAgo = _formatTimeAgo(timestamp);
+            final timeAgo = _formatTimeAgo(notification['created_at']);
 
             return Card(
               color: isRead
@@ -177,11 +233,17 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
                     : IconButton(
                   icon: const Icon(Icons.mark_email_read),
                   onPressed: () async {
-                    await supabase
-                        .from('notifications')
-                        .update({'is_read': true})
-                        .eq('id', notification['id']);
-                    _loadNotifications();
+                    try {
+                      await supabase
+                          .from('notifications')
+                          .update({'read': true})
+                          .eq('id', notification['id']);
+                      setState(() {
+                        notification['read'] = true;
+                      });
+                    } catch (e) {
+                      debugPrint("❌ Error marking as read: $e");
+                    }
                   },
                 ),
                 onTap: () => _showNotificationDetails(notification),

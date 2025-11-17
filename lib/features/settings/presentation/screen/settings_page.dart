@@ -4,6 +4,7 @@ import 'package:logistics_toolkit/features/auth/presentation/screens/login_scree
 import 'package:logistics_toolkit/features/settings/presentation/screen/addressBook_page.dart';
 import 'package:logistics_toolkit/features/settings/presentation/screen/app_version_page.dart';
 import 'package:provider/provider.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import '../../../../config/theme.dart';
 import '../../../../services/user_data_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1009,7 +1010,12 @@ class _SettingsPageState extends State<SettingsPage> {
     );
 
     if (confirmLogout != true) return;
-
+    try {
+      OneSignal.logout();
+      print('✅ OneSignal user logged out.');
+    } catch (e) {
+      print('❌ Error logging out from OneSignal: $e');
+    }
     await supabase.auth.signOut();
     if (context.mounted) {
       UserDataService.clearCache();

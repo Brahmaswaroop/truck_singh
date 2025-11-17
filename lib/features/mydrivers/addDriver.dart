@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:logistics_toolkit/services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:logistics_toolkit/features/disable/otp_activation_service.dart';
+import '../notifications/notification_service.dart';
 
 class AddDriverPage extends StatefulWidget {
   const AddDriverPage({super.key});
@@ -248,21 +249,54 @@ class _AddDriverPageState extends State<AddDriverPage> {
       } catch (e) {
         print('Warning: Could not fetch user role: $e');
       }
-
-      // Use the proper function that updates tracking columns
       await toggleAccountStatusRpc(
         customUserId: driver['custom_user_id'],
         disabled: willDisable,
         changedBy: userEmail,
         changedByRole: currentUserRole,
       );
+      if (willDisable) {
+        final String disabledDriverCustomId = driver['custom_user_id'] ?? '';
+        final String? agentCustomId = loggedInOwnerCustomId; // Already available
+        final String disabledDriverName = driver['name'] ?? 'your driver';
+        NotificationService.sendPushNotificationToUser(
+          recipientId: disabledDriverCustomId,
+          title: 'Account Disabled'.tr(),
+          message: 'Your account has been disabled by your agent/owner.'.tr(),
+          data: {'type': 'account_status'},
+        );
+        if (agentCustomId != null) {
+          NotificationService.sendPushNotificationToUser(
+            recipientId: agentCustomId,
+            title: 'Action Confirmation'.tr(),
+            message: 'You have successfully disabled the account for'.tr() + ' $disabledDriverName.',
+            data: {'type': 'admin_log'},
+          );
+        }
+      } else {
+        final String enabledDriverCustomId = driver['custom_user_id'] ?? '';
+        final String? agentCustomId = loggedInOwnerCustomId;
+        final String enabledDriverName = driver['name'] ?? 'your driver';
+        NotificationService.sendPushNotificationToUser(
+          recipientId: enabledDriverCustomId,
+          title: 'Account Enabled'.tr(),
+          message: 'Your account has been re-enabled by your agent/owner.'.tr(),
+          data: {'type': 'account_status'},
+        );
 
-      // Create a success result object for compatibility
+        // 2. Notify the agent (self-notification)
+        if (agentCustomId != null) {
+          NotificationService.sendPushNotificationToUser(
+            recipientId: agentCustomId,
+            title: 'Action Confirmation'.tr(),
+            message: 'You have successfully enabled the account for'.tr() + ' $enabledDriverName.',
+            data: {'type': 'admin_log'},
+          );
+        }
+      }
+
       final result = {'ok': true};
-
       if (!mounted) return;
-
-      // Success - toggleAccountStatusRpc doesn't return an error on success
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Driver account ${action}d successfully'),

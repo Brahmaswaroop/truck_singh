@@ -5,8 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:logistics_toolkit/config/theme.dart';
-import 'package:pull_to_refresh/pull_to_refresh.dart' as ptr;
-
+import '../notifications/notification_service.dart';
 
 enum UserRole { agent, truckOwner, driver }
 
@@ -30,9 +29,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
   late AnimationController _animationController;
   String _selectedStatusFilter = 'All';
   final List<String> _statusFilters = ['All', 'Uploaded', 'Verified'];
-  final ptr.RefreshController _refreshController =
-  ptr.RefreshController(initialRefresh: false);
-
+  String? _loggedInUserName;
   // Vehicle documents that can be uploaded for trucks
   final Map<String, Map<String, dynamic>> _vehicleDocuments = {
     'Vehicle Registration': {
@@ -90,12 +87,13 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
       final profile = await supabase
           .from('user_profiles')
-          .select('custom_user_id, role') // Changed from user_type to role
+          .select('custom_user_id, role, name')
           .eq('user_id', userId)
           .single();
 
       _loggedInUserId = profile['custom_user_id'];
-      final userType = profile['role']; // Changed from user_type to role
+      _loggedInUserName = profile['name'];
+      final userType = profile['role'];
 
       print('User profile fetched: $profile');
 
@@ -110,7 +108,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       print('Detected role for user $_loggedInUserId: $_userRole');
     } catch (e) {
       print('Error detecting user role: $e');
-      // Fallback logic
+
       if (_loggedInUserId?.startsWith('TRUK') == true) {
         _userRole = UserRole.truckOwner;
       } else if (_loggedInUserId?.startsWith('DRV') == true) {
@@ -118,6 +116,32 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       } else {
         _userRole = UserRole.driver;
       }
+    }
+  }
+
+  Future<List<String>> _getDriversForTruck(String truckNumber) async {
+    try {
+      final response = await supabase
+          .from('shipment')
+          .select('assigned_driver')
+          .eq('assigned_truck', truckNumber)
+          .not('booking_status', 'in', '("Completed", "cancelled")');
+
+      if (response.isEmpty) {
+        return [];
+      }
+
+      final driverIds = <String>{};
+      for (var row in response) {
+        if (row['assigned_driver'] != null) {
+          driverIds.add(row['assigned_driver'] as String);
+        }
+      }
+
+      return driverIds.toList();
+    } catch (e) {
+      print('Error finding drivers for truck $truckNumber: $e');
+      return [];
     }
   }
 
@@ -131,21 +155,15 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
     try {
       List<Map<String, dynamic>> trucks = [];
 
-      // Get trucks based on user role - all users see only their own trucks
       if (_userRole == UserRole.agent || _userRole == UserRole.truckOwner) {
-        // Both agents and truck owners can see only their own trucks
         trucks = await supabase
             .from('trucks')
-            .select(
-          'id, truck_number, truck_admin, make, model, year, vehicle_type',
-        )
+            .select('id, truck_number, truck_admin, make, model, year, vehicle_type',)
             .eq('truck_admin', _loggedInUserId!)
             .order('truck_number');
-
-        // Debug: Check what data we get from database
         print('Raw trucks data from database: $trucks');
-      } else if (_userRole == UserRole.driver) {
-        // Drivers can only see trucks they are currently assigned to via shipments
+      }
+      else if (_userRole == UserRole.driver) {
         final activeShipments = await supabase
             .from('shipment')
             .select('assigned_truck')
@@ -162,9 +180,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           if (truckNumbers.isNotEmpty) {
             trucks = await supabase
                 .from('trucks')
-                .select(
-              'id, truck_number, truck_admin, make, model, year, vehicle_type',
-            )
+                .select('id, truck_number, truck_admin, make, model, year, vehicle_type',)
                 .inFilter('truck_number', truckNumbers)
                 .order('truck_number');
           }
@@ -183,7 +199,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         return;
       }
 
-      // Get truck documents for all these trucks
       final truckIds = trucks.map((truck) {
         final id = truck['id'];
         return id is int ? id : int.parse(id.toString());
@@ -199,7 +214,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
       print('Found truck documents: ${uploadedDocs.length} - $uploadedDocs');
 
-      // Build trucks with their document status (similar to driver documents structure)
       final trucksWithDocuments = trucks
           .map((truck) {
         final truckIdValue = truck['id'];
@@ -225,7 +239,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
         final docStatus = <String, Map<String, dynamic>>{};
         for (var type in _vehicleDocuments.keys) {
-          // Get document of this type for this truck
           final doc = docsForThisTruck.firstWhere(
                 (d) => d['doc_type'] == type,
             orElse: () => <String, dynamic>{},
@@ -236,8 +249,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           if (doc.isNotEmpty) {
             print('Document found for $truckNumber-$type: uploaded');
           }
-
-          // Generate proper public URL for the file
           String? publicUrl;
           if (doc['file_path'] != null &&
               doc['file_path'].toString().isNotEmpty) {
@@ -247,7 +258,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
                   .getPublicUrl(doc['file_path']);
             } catch (e) {
               print('Error generating public URL: $e');
-              publicUrl = doc['file_path']; // Fallback to file path
+              publicUrl = doc['file_path'];
             }
           }
 
@@ -256,15 +267,15 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
             'file_url': publicUrl,
             'file_path': doc['file_path'],
             'uploaded_at': doc['uploaded_at'],
-            'verified_at': null, // Not available in current schema
-            'verified_by': null, // Not available in current schema
+            'verified_at': null,
+            'verified_by': null,
             'uploaded_by_id': doc['custom_user_id'],
-            'uploaded_by_role': null, // Not available in current schema
+            'uploaded_by_role': null,
           };
         }
 
         return {
-          'id': truckId, // Include the truck ID
+          'id': truckId,
           'truck_number': truckNumber,
           'truck_admin': truck['truck_admin'] ?? 'Unknown',
           'truck_type': truck['vehicle_type'] ?? truck['make'] ?? 'Unknown',
@@ -282,13 +293,11 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         _applyStatusFilter();
         _isLoading = false;
       });
-      _refreshController.refreshCompleted();
     } catch (e) {
       print('Error loading truck documents: $e');
       setState(() {
         _isLoading = false;
       });
-      _refreshController.refreshFailed();
       _showErrorSnackBar('Error loading documents: ${e.toString()}');
     }
   }
@@ -299,15 +308,10 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
     } else {
       _filteredTrucks = _trucks.where((truck) {
         final docs = truck['documents'] as Map<String, Map<String, dynamic>>;
-        return docs.values.any((doc) =>
-        doc['status']
-            .toString()
-            .toLowerCase() ==
-            _selectedStatusFilter.toLowerCase());
+        return docs.values.any((doc) => doc['status'] == _selectedStatusFilter);
       }).toList();
     }
   }
-
 
   Future<void> _uploadDocument(String truckNumber, String docType) async {
     // Check permissions - only agents and truck owners can upload
@@ -430,6 +434,25 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       };
 
       await supabase.from('truck_documents_old').insert(insertData);
+      if (_loggedInUserId != null) {
+        final uploaderName = _loggedInUserName ?? _loggedInUserId!;
+        NotificationService.sendPushNotificationToUser(
+          recipientId: _loggedInUserId!,
+          title: 'Document Uploaded'.tr(),
+          message: 'You have successfully uploaded $docType for truck $truckNumber.'.tr(),
+          data: {'type': 'truck_document_upload', 'truck_number': truckNumber},
+        );
+        final driverIds = await _getDriversForTruck(truckNumber);
+        for (final driverId in driverIds) {
+          NotificationService.sendPushNotificationToUser(
+            recipientId: driverId,
+            title: 'Truck Document Updated'.tr(),
+            message: '$uploaderName has uploaded a new document ($docType) for your assigned truck $truckNumber.'.tr(),
+            data: {'type': 'truck_document_update', 'truck_number': truckNumber},
+          );
+        }
+      }
+
 
       _showSuccessSnackBar('Document uploaded successfully');
       await _loadTruckDocuments();
@@ -558,60 +581,46 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           ),
           // Trucks List
           Expanded(
-            child: ptr.SmartRefresher(
-              controller: _refreshController,
-              onRefresh: _loadTruckDocuments,
-              enablePullDown: true,
-              enablePullUp: false,
-              header: const ptr.WaterDropHeader(), // nice animation
-              child: _filteredTrucks.isEmpty
-                  ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
+            child: _filteredTrucks.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 200),
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.local_shipping_outlined,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _userRole == UserRole.driver
-                              ? 'no_trucks_driver'.tr()
-                              : 'no_trucks_other'.tr(),
-                          style: const TextStyle(fontSize: 16),
-                          textAlign: TextAlign.center,
-                        ),
-                        if (_userRole == UserRole.driver)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              'driver_hint'.tr(),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                      ],
-                    ),
+                  Icon(
+                    Icons.local_shipping_outlined,
+                    size: 64,
+                    color: Colors.grey[400],
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _userRole == UserRole.driver
+                        ? 'no_trucks_driver'.tr()
+                        : 'no_trucks_other'.tr(),
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_userRole == UserRole.driver)
+                    Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'driver_hint'.tr(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                 ],
-              )
-                  : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredTrucks.length,
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemBuilder: (context, index) {
-                  final truck = _filteredTrucks[index];
-                  return _buildTruckCard(truck);
-                },
               ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _filteredTrucks.length,
+              itemBuilder: (context, index) {
+                final truck = _filteredTrucks[index];
+                return _buildTruckCard(truck);
+              },
             ),
           ),
         ],
@@ -677,20 +686,16 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
     final fileUrl = docStatus['file_url'];
     final isUploading =
         _uploadingTruckNumber == truckNumber && _uploadingDocType == docType;
-
-    // Check upload permission
     bool canUpload = false;
     if (_userRole == UserRole.agent) {
-      canUpload = true; // Agents can upload for any truck
+      canUpload = true;
     } else if (_userRole == UserRole.truckOwner) {
-      // Truck owners can upload for their own trucks
       final truck = _trucks.firstWhere(
             (t) => t['truck_number'] == truckNumber,
         orElse: () => {},
       );
       canUpload = truck.isNotEmpty && truck['truck_admin'] == _loggedInUserId;
     }
-    // Drivers cannot upload truck documents
 
     Color statusColor;
     switch (status.toLowerCase()) {
@@ -815,13 +820,10 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           ),
           onPressed: () async {
             try {
-              // Generate proper public URL from file path
               String properUrl;
               if (fileUrl.startsWith('http')) {
-                // Already a proper URL
                 properUrl = fileUrl;
               } else {
-                // Generate public URL from file path
                 properUrl = supabase.storage
                     .from('truck-documents')
                     .getPublicUrl(fileUrl);
@@ -848,8 +850,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         ),
       );
     }
-
-    // Verify button for agents (uploaded documents only)
     if (status == 'uploaded' && _userRole == UserRole.agent) {
       actionButtons.add(
         IconButton(
@@ -863,8 +863,6 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         ),
       );
     }
-
-    // Show disabled state for users who can't upload
     if (status == 'Not Uploaded' && !canUpload) {
       String disabledText = 'Cannot Upload';
       if (_userRole == UserRole.driver) {

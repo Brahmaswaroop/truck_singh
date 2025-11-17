@@ -498,182 +498,184 @@ class _MyShipmentsPageState extends State<MyShipments> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: fetchShipments,
-        child: loading
-            ? buildSkeletonLoader()
-            : filteredShipments.isEmpty
-            ? buildEmptyState()
-            : ListView.builder(
-          itemCount: filteredShipments.length > 10
-              ? 10
-              : filteredShipments.length,
-          itemBuilder: (_, i) {
-            final s = filteredShipments[i];
-            return InkWell(
-              onTap: () async {
-                final newEditCount = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ShipmentDetailsPage(
-                      shipment: s,
-                      isHistoryPage: false,
-                    ),
-                  ),
-                );
-                if (newEditCount != null && newEditCount is int) {
-                  final index = filteredShipments.indexWhere(
-                        (shipment) =>
-                    shipment['shipment_id'] == s['shipment_id'],
-                  );
-                  if (index != -1) {
-                    setState(() {
-                      filteredShipments[index]['edit_count'] =
-                          newEditCount;
-                    });
-                  }
-                }
-              },
-              borderRadius: BorderRadius.circular(12),
-              child: Card(
-                margin: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                elevation: 0.5,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadiusGeometry.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Pickup Address Row
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on,
-                                  color: Colors.red,
-                                ),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    '${trimAddress(s['pickup'] ?? '')}',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 5),
-                            // Drop Address Row
-                            Row(
-                              children: [
-                                Icon(Icons.pin_drop, color: Colors.teal),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    '${trimAddress(s['drop'] ?? '')}',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${s['shipment_id']}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${'pickup'.tr()}: ${getFormattedDate(s['created_at'])}',
-                            ),
-                            Text(
-                              '${'drop'.tr()}: ${getFormattedDate(s['delivery_date'])}',
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  getStatusIcon(s['booking_status']),
-                                  size: 20,
-                                  color: getStatusColor(
-                                    s['booking_status'],
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                // Place the status text here (localized if key exists)
-                                Text(s['booking_status'].toString().tr()),
-                              ],
-                            ),
-                          ],
-                        ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: fetchShipments,
+          child: loading
+              ? buildSkeletonLoader()
+              : filteredShipments.isEmpty
+              ? buildEmptyState()
+              : ListView.builder(
+            itemCount: filteredShipments.length > 10
+                ? 10
+                : filteredShipments.length,
+            itemBuilder: (_, i) {
+              final s = filteredShipments[i];
+              return InkWell(
+                onTap: () async {
+                  final newEditCount = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ShipmentDetailsPage(
+                        shipment: s,
+                        isHistoryPage: false,
                       ),
-                      const SizedBox(width: 8),
-                      Column(                          crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (getShipmentBadge(s) != null) getShipmentBadge(s)!,
-                          const SizedBox(height: 50),
-                          if (s['booking_status'] != 'Completed')
-                            InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 80,
-                                width: 80,
-                                decoration: BoxDecoration(
-                                  color: Colors.teal.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.teal.shade100,
-                                    width: 1,
+                    ),
+                  );
+                  if (newEditCount != null && newEditCount is int) {
+                    final index = filteredShipments.indexWhere(
+                          (shipment) =>
+                      shipment['shipment_id'] == s['shipment_id'],
+                    );
+                    if (index != -1) {
+                      setState(() {
+                        filteredShipments[index]['edit_count'] =
+                            newEditCount;
+                      });
+                    }
+                  }
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  elevation: 0.5,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadiusGeometry.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Pickup Address Row
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    color: Colors.red,
                                   ),
-                                ),
-                                child: Column(
-                                  mainAxisAlignment:
-                                  MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.location_pin,
-                                      size: 40,
-                                      color: Colors.teal[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'track'.tr(),
-                                      style: TextStyle(
-                                        color: Colors.teal[800],
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      '${trimAddress(s['pickup'] ?? '')}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                       ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
                                     ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              // Drop Address Row
+                              Row(
+                                children: [
+                                  Icon(Icons.pin_drop, color: Colors.teal),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      '${trimAddress(s['drop'] ?? '')}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${s['shipment_id']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${'pickup'.tr()}: ${getFormattedDate(s['created_at'])}',
+                              ),
+                              Text(
+                                '${'drop'.tr()}: ${getFormattedDate(s['delivery_date'])}',
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    getStatusIcon(s['booking_status']),
+                                    size: 20,
+                                    color: getStatusColor(
+                                      s['booking_status'],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Place the status text here (localized if key exists)
+                                  Text(s['booking_status'].toString().tr()),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (getShipmentBadge(s) != null) getShipmentBadge(s)!,
+                            const SizedBox(height: 50),
+                            if (s['booking_status'] != 'Completed')
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  height: 80,
+                                  width: 80,
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.teal.shade100,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment:
+                                    MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.location_pin,
+                                        size: 40,
+                                        color: Colors.teal[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'track'.tr(),
+                                        style: TextStyle(
+                                          color: Colors.teal[800],
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

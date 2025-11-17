@@ -8,7 +8,7 @@ import 'dashboard_router.dart';
 import '../../utils/user_role.dart';
 import '../../../disable/unable_account_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:onesignal_flutter/onesignal_flutter.dart'; // <-- 1. IMPORT IS NEEDED
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -24,7 +24,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
 
   bool _obscureText = true;
   bool _loading = false;
-  bool _oauthInProgress = false; // Prevent multiple OAuth attempts
+  bool _oauthInProgress = false;
 
   @override
   void initState() {
@@ -44,29 +44,21 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // App came back to foreground - check if OAuth completed
       print('🔄 App resumed, checking for OAuth completion...');
       _checkForOAuthCompletion();
     }
   }
 
-  // Check if OAuth completed while user was away
   void _checkForOAuthCompletion() {
     final currentUser = Supabase.instance.client.auth.currentUser;
     if (currentUser != null && mounted) {
       print('🎉 CACHED OAUTH DETECTED ON APP RESUME!');
-      print('🎉 User: ${currentUser.email}');
-      print('🚀 Handling cached OAuth session from app resume');
-
-      // Handle cached OAuth session immediately instead of waiting
       _handleSuccessfulLogin(currentUser);
     }
   }
 
-  // Handles email/password sign-in and user role check.
   Future<void> _loginUser() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _loading = true);
 
     final email = emailCtrl.text.trim();
@@ -80,34 +72,20 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
         print('✅ Email login successful for user: ${res.user!.email}');
         print('✅ User ID: ${res.user!.id}');
 
-        // Show success message
         if (mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Login successful!')));
         }
-
-        // Wait a moment for the auth state to propagate
         await Future.delayed(const Duration(milliseconds: 500));
-
-        // Verify the user is still authenticated
         final currentUser = Supabase.instance.client.auth.currentUser;
         print('🔍 Current user after login: ${currentUser?.email}');
 
-        if (currentUser == null) {
-          print('❌ User lost after login - this should not happen');
-        } else {
+        if (currentUser != null && mounted) {
           print(
             '✅ User authentication confirmed, checking profile and redirecting',
           );
-
-          // Wait a bit more for success message to be visible
-          await Future.delayed(const Duration(milliseconds: 1500));
-
-          // Manually check user profile and redirect
-          if (mounted) {
-            await _handleSuccessfulLogin(currentUser);
-          }
+          await _handleSuccessfulLogin(currentUser);
         }
       } else {
         print('❌ Login failed: No user returned');
@@ -119,8 +97,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
       }
     } on AuthException catch (e) {
       print('❌ Login AuthException: ${e.message}');
-
-      // Check if this might be an OAuth user trying to use email/password
       if (e.message.contains('Invalid login credentials') ||
           e.message.contains('Email not confirmed')) {
         await _handlePossibleOAuthUser(email);
@@ -143,7 +119,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     }
   }
 
-  // New addition: Handles social sign-in with a provider (e.g., Google, Facebook)
   Future<void> _signInWithProvider(OAuthProvider provider) async {
     if (_oauthInProgress) {
       print('  OAuth already in progress, ignoring duplicate request');
@@ -156,32 +131,21 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
       _oauthInProgress = true;
     });
     try {
-      // Initiates the OAuth sign-in flow
       await Supabase.instance.client.auth.signInWithOAuth(
         provider,
-        // The URL where your app will receive the authentication callback
         redirectTo: 'com.login.app://login-callback',
       );
-
-      // Success! OAuth flow initiated
       print('🔐 OAuth flow initiated successfully');
-      print('🔐 Redirect URI: com.login.app://login-callback');
-
-      // CRITICAL FIX: Check if OAuth completed immediately (cached session)
       await Future.delayed(const Duration(milliseconds: 500));
       final immediateUser = Supabase.instance.client.auth.currentUser;
 
       if (immediateUser != null) {
         print('🎯 CACHED OAUTH DETECTED: User session returned immediately');
-        print('🎯 User: ${immediateUser.email}');
-
-        // OAuth session was cached and returned immediately
         if (mounted) {
           setState(() {
             _loading = false;
             _oauthInProgress = false;
           });
-          print('🚀 Handling cached OAuth session immediately');
           await _handleSuccessfulLogin(immediateUser);
         }
         return;
@@ -190,19 +154,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
       print(
         '🔐 OAuth requires user interaction, starting callback detection...',
       );
-      // Start aggressive checking for OAuth callback completion
       _startOAuthCallbackDetection();
-    } on AuthException catch (e) {
-      print('❌ OAuth AuthException: ${e.message}');
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _oauthInProgress = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Social login failed: ${e.message}")),
-        );
-      }
     } catch (e) {
       print('❌ OAuth Error: $e');
       if (mounted) {
@@ -217,7 +169,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     }
   }
 
-  // Aggressively check for OAuth callback completion
   void _startOAuthCallbackDetection() {
     Timer.periodic(const Duration(milliseconds: 200), (timer) {
       final currentUser = Supabase.instance.client.auth.currentUser;
@@ -233,13 +184,9 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
             _loading = false;
             _oauthInProgress = false;
           });
-
-          // CRITICAL FIX: Don't just wait for main.dart - handle navigation directly
-          print('🚀 OAuth callback detected, handling navigation immediately');
           _handleSuccessfulLogin(currentUser);
         }
       } else if (timer.tick > 150) {
-        // Stop after 30 seconds (150 * 200ms)
         print('⏰ OAuth callback timeout - stopping detection');
         timer.cancel();
         if (mounted) {
@@ -252,13 +199,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     });
   }
 
-  // Handle successful login by checking profile and redirecting appropriately
   Future<void> _handleSuccessfulLogin(User user) async {
-
-
-    // --- START OF FIX ---
-    // 2. ADD THIS CODE
-    // Save the user ID for the background service
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('current_user_id', user.id);
@@ -266,26 +207,21 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     } catch (e) {
       print('❌ Failed to save user_id to SharedPreferences: $e');
     }
-    // --- END OF FIX ---
-
-
 
     try {
       print(
         '🔍 Checking user profile after successful login for: ${user.email}',
       );
 
-      // Check if user profile exists and is complete
       final userProfile = await Supabase.instance.client
           .from('user_profiles')
           .select(
-        'role, account_disable, profile_completed, custom_user_id', // <-- 2. GET custom_user_id
+        'role, account_disable, profile_completed, custom_user_id',
       )
           .eq('user_id', user.id)
           .maybeSingle();
 
       if (userProfile == null) {
-        // New user - redirect to role selection
         print('🆕 No profile found, redirecting to role selection');
         if (mounted) {
           Navigator.of(context).pushReplacement(
@@ -293,9 +229,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
           );
         }
       } else {
-        // Existing user - check account status
         final isDisabled = userProfile['account_disable'] as bool? ?? false;
-
         if (isDisabled) {
           print('🚫 Account disabled, redirecting to unable account page');
           if (mounted) {
@@ -308,13 +242,11 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
           }
           return;
         }
-
-        // Check if profile is completed
         final isProfileCompleted =
             userProfile['profile_completed'] as bool? ?? false;
         final role = userProfile['role'];
-        final customUserId = userProfile['custom_user_id'] as String?; // <-- 3. STORE custom_user_id
-
+        final customUserId = userProfile['custom_user_id'] as String?;
+        print('🔍 Fetched Custom User ID: $customUserId');
         if (!isProfileCompleted || role == null) {
           print('⚠️ Incomplete profile, redirecting to role selection');
           if (mounted) {
@@ -326,14 +258,16 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
           }
         } else {
           print('✅ Complete profile found, redirecting to dashboard');
-          // --- 4. THIS IS THE CRITICAL ONESIGNAL FIX ---
+
+          // --- ONESIGNAL LOGIN LOGIC ---
           if (customUserId != null) {
             OneSignal.login(customUserId);
             print('✅ OneSignal user logged in with external ID: $customUserId');
           } else {
             print('❌ OneSignal login skipped: custom_user_id is null');
           }
-          // --- END OF FIX ---
+          // --- END OF LOGIC ---
+
           final userRole = UserRoleExtension.fromDbValue(role);
           if (userRole != null && mounted) {
             Navigator.of(context).pushReplacement(
@@ -346,7 +280,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
       }
     } catch (e) {
       print('❌ Error handling successful login: $e');
-      // Fallback - show error message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -359,10 +292,8 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     }
   }
 
-  // Check if user exists in database (might be OAuth user)
   Future<void> _handlePossibleOAuthUser(String email) async {
     try {
-      // Check if email exists in user_profiles (OAuth user)
       final existingUser = await Supabase.instance.client
           .from('user_profiles')
           .select('email, user_id')
@@ -370,11 +301,9 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
           .maybeSingle();
 
       if (existingUser != null) {
-        // User exists in database - likely OAuth user
         print('👤 Email found in database - likely OAuth user');
         _showOAuthRequiredDialog();
       } else {
-        // User doesn't exist - show generic error
         print('❌ Email not found in database - invalid credentials');
         if (mounted) {
           ScaffoldMessenger.of(
@@ -392,10 +321,8 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     }
   }
 
-  // Show dialog guiding user to use Google OAuth
   void _showOAuthRequiredDialog() {
     if (!mounted) return;
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -424,7 +351,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
   InputDecoration _inputDecoration(String label, IconData prefixIcon) {
     return InputDecoration(
       filled: true,
-      //fillColor: Colors.teal.shade50,
       labelText: label,
       prefixIcon: Icon(prefixIcon, color: Colors.teal.shade700),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -443,7 +369,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
     );
   }
 
-  // Language dialog
   void _showLanguageDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -504,9 +429,7 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                         vertical: 38,
                       ),
                       decoration: BoxDecoration(
-                        //color: Colors.white,
                         color: Theme.of(context).cardColor,
-
                         borderRadius: BorderRadius.circular(28),
                       ),
                       child: Form(
@@ -515,16 +438,10 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const SizedBox(height: 8),
-                            /*const Icon(
-                              Icons.lock,
-                              size: 80,
-                              color: Color(0xFF00796B),
-                            ),*/
                             Image.asset(
                               'assets/TruckSinghbgr.png',
                               width: 110,
                               height: 110,
-                              //color: Color(0xFF00796B),
                             ),
                             const SizedBox(height: 5),
                             Text(
@@ -541,7 +458,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                               "sign_in_to_continue".tr(),
                               style: TextStyle(
                                 fontSize: 16,
-                                //color: Colors.black54,
                                 color: Theme.of(
                                   context,
                                 ).textTheme.headlineMedium?.color,
@@ -550,8 +466,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                               ),
                             ),
                             const SizedBox(height: 32),
-
-                            // Email Input
                             TextFormField(
                               controller: emailCtrl,
                               enabled: !_loading,
@@ -566,8 +480,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                   : null,
                             ),
                             const SizedBox(height: 22),
-
-                            // Password Input and Forgot Password aligned right
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -577,7 +489,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                   obscureText: _obscureText,
                                   style: const TextStyle(
                                     fontSize: 16,
-                                    //color: Colors.black87,
                                   ),
                                   decoration:
                                   _inputDecoration(
@@ -607,12 +518,10 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                   },
                                 ),
                                 const SizedBox(height: 6),
-                                // New addition: "Forgot Password?" button with navigation
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
                                     onPressed: () {
-                                      // Navigates to the ResetPasswordRequestPage
                                       Navigator.of(context).push(
                                         MaterialPageRoute(
                                           builder: (_) =>
@@ -631,7 +540,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                 ),
                               ],
                             ),
-
                             const SizedBox(height: 32),
                             SizedBox(
                               width: double.infinity,
@@ -661,14 +569,11 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                     : Text("log_in".tr()),
                               ),
                             ),
-
                             const SizedBox(height: 24),
                             TextButton(
                               onPressed: _loading
                                   ? null
                                   : () {
-                                // This navigation is from your original code.
-                                // It leads to a role selection page before registration.
                                 Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
@@ -686,7 +591,6 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-
                             const SizedBox(height: 16),
                             Row(
                               children: [
@@ -715,12 +619,9 @@ class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
                               ],
                             ),
                             const SizedBox(height: 14),
-
-                            // Social sign-in button
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // Google Sign-In Button
                                 SizedBox(
                                   width: 56,
                                   height: 56,

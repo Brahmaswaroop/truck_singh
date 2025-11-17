@@ -378,6 +378,45 @@ class _TripRatingsPageState extends State<TripRatingsPage> {
             style: const TextStyle(color: Colors.red),
           ),
         )
+            : _ratings.isEmpty
+            ? ptr.SmartRefresher(
+            controller: _refreshController,
+            onRefresh: _fetchRatings,
+            header: const ptr.WaterDropHeader(),
+            child:Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.star_border_purple500_sharp,
+                      size: 80,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      tr("no_ratings_yet"),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      tr("no_ratings_yet_description"),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+        )
             : ptr.SmartRefresher(
           controller: _refreshController,
           onRefresh: _fetchRatings,

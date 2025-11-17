@@ -6,7 +6,6 @@ import 'package:logistics_toolkit/features/complains/complain_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 import 'dart:math';
-
 import '../ratings/presentation/screen/rating.dart';
 import '../tracking/shipment_tracking_page.dart';
 
@@ -407,121 +406,178 @@ class _ShipmentDetailsPageState extends State<ShipmentDetailsPage>
     final bool canRate =
         isCompleted && !editLimitReached && !isRatingPeriodExpired;
     return Scaffold(
-      //backgroundColor: Colors.grey[50],
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text('shipmentDetails'.tr()),
-        //backgroundColor: Colors.white,
-        //foregroundColor: Colors.black87,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _isMapLoading = true;
-              });
-              _initializeMap();
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Status Header Card
-            Container(
-              width: double.infinity,
-              margin: EdgeInsets.all(16),
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    getStatusColor(widget.shipment['booking_status']),
-                    getStatusColor(
-                      widget.shipment['booking_status'],
-                    ).withOpacity(0.7),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: getStatusColor(
-                      widget.shipment['booking_status'],
-                    ).withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      AnimatedBuilder(
-                        animation: _pulseAnimation,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _pulseAnimation.value,
-                            child: Icon(
-                              getStatusIcon(widget.shipment['booking_status']),
-                              //color: Colors.white,
-                              size: 32,
-                            ),
-                          );
-                        },
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.shipment['booking_status'] ??
-                                  'unknown'.tr(),
-                              style: TextStyle(
-                                //color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              '${'shipmentID'.tr()}: ${widget.shipment['shipment_id']}',
-                              style: TextStyle(
-                                //color: Colors.white.withOpacity(0.9),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: Text('shipmentDetails'.tr()),
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: () {
+                setState(() {
+                  _isMapLoading = true;
+                });
+                _initializeMap();
+              },
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  margin: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        getStatusColor(widget.shipment['booking_status']),
+                        getStatusColor(
+                          widget.shipment['booking_status'],
+                        ).withOpacity(0.7),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: getStatusColor(
+                          widget.shipment['booking_status'],
+                        ).withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          AnimatedBuilder(
+                            animation: _pulseAnimation,
+                            builder: (context, child) {
+                              return Transform.scale(
+                                scale: _pulseAnimation.value,
+                                child: Icon(
+                                  getStatusIcon(widget.shipment['booking_status']),
+                                  size: 32,
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.shipment['booking_status'] ??
+                                      'unknown'.tr(),
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '${'shipmentID'.tr()}: ${widget.shipment['shipment_id']}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
 
-            //live tracking container that is clickable and redirect to live tracking page
-            if (widget.shipment['booking_status'] != 'Completed')
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ShipmentTrackingPage(
-                        shipmentId: widget.shipment['shipment_id'],
+                //live tracking container that is clickable and redirect to live tracking page
+                if (widget.shipment['booking_status'] != 'Completed')
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ShipmentTrackingPage(
+                            shipmentId: widget.shipment['shipment_id'],
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      margin: EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        //color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  color: Colors.red,
+                                  size: 24,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'liveTracking'.tr(),
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.touch_app,
+                                  color: Colors.grey[600],
+                                  size: 16,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'tapToOpenLiveTracking'.tr(),
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
+                  ),
+
+                SizedBox(height: 16),
+                Container(
                   margin: EdgeInsets.symmetric(horizontal: 16),
+                  padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
                     //color: Colors.white,
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
@@ -532,254 +588,192 @@ class _ShipmentDetailsPageState extends State<ShipmentDetailsPage>
                     ],
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.location_on,
-                              color: Colors.red,
-                              size: 24,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'liveTracking'.tr(),
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                      Text(
+                        'shipmentInformation'.tr(),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.touch_app,
-                              color: Colors.grey[600],
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'tapToOpenLiveTracking'.tr(),
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                      SizedBox(height: 16),
+
+                      _buildInfoRow(
+                        Icons.location_on,
+                        'pickupLocation'.tr(),
+                        widget.shipment['pickup'] ?? 'nA'.tr(),
                       ),
+                      _buildInfoRow(
+                        Icons.place,
+                        'dropLocation'.tr(),
+                        widget.shipment['drop'] ?? 'nA'.tr(),
+                      ),
+                      _buildInfoRow(
+                        Icons.calendar_today,
+                        'pickupDate'.tr(),
+                        getFormattedDate(widget.shipment['created_at']),
+                      ),
+                      _buildInfoRow(
+                        Icons.calendar_today,
+                        'deliveryDate'.tr(),
+                        getFormattedDate(widget.shipment['delivery_date']),
+                      ),
+                      _buildInfoRow(
+                        Icons.access_time,
+                        'pickupTime'.tr(),
+                        widget.shipment['pickup_time'] ?? 'nA'.tr(),
+                      ),
+
+                      if (widget.shipment['assigned_company'] != null)
+                        _buildInfoRow(
+                          Icons.business,
+                          'assignedCompany'.tr(),
+                          widget.shipment['assigned_company'],
+                        ),
+                      if (widget.shipment['assigned_agent'] != null)
+                        _buildInfoRow(
+                          Icons.person,
+                          'assignedAgent'.tr(),
+                          widget.shipment['assigned_agent'],
+                        ),
+                      if (widget.shipment['assigned_driver'] != null)
+                        _buildInfoRow(
+                          Icons.drive_eta,
+                          'assignedDriver'.tr(),
+                          widget.shipment['assigned_driver'],
+                        ),
                     ],
                   ),
                 ),
-              ),
 
-            SizedBox(height: 16),
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: 16),
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                //color: Colors.white,
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'shipmentInformation'.tr(),
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 16),
+                SizedBox(height: 16),
 
-                  _buildInfoRow(
-                    Icons.location_on,
-                    'pickupLocation'.tr(),
-                    widget.shipment['pickup'] ?? 'nA'.tr(),
-                  ),
-                  _buildInfoRow(
-                    Icons.place,
-                    'dropLocation'.tr(),
-                    widget.shipment['drop'] ?? 'nA'.tr(),
-                  ),
-                  _buildInfoRow(
-                    Icons.calendar_today,
-                    'pickupDate'.tr(),
-                    getFormattedDate(widget.shipment['created_at']),
-                  ),
-                  _buildInfoRow(
-                    Icons.calendar_today,
-                    'deliveryDate'.tr(),
-                    getFormattedDate(widget.shipment['delivery_date']),
-                  ),
-                  _buildInfoRow(
-                    Icons.access_time,
-                    'pickupTime'.tr(),
-                    widget.shipment['pickup_time'] ?? 'nA'.tr(),
-                  ),
-
-                  if (widget.shipment['assigned_company'] != null)
-                    _buildInfoRow(
-                      Icons.business,
-                      'assignedCompany'.tr(),
-                      widget.shipment['assigned_company'],
-                    ),
-                  if (widget.shipment['assigned_agent'] != null)
-                    _buildInfoRow(
-                      Icons.person,
-                      'assignedAgent'.tr(),
-                      widget.shipment['assigned_agent'],
-                    ),
-                  if (widget.shipment['assigned_driver'] != null)
-                    _buildInfoRow(
-                      Icons.drive_eta,
-                      'assignedDriver'.tr(),
-                      widget.shipment['assigned_driver'],
-                    ),
-                ],
-              ),
-            ),
-
-            SizedBox(height: 16),
-
-            // Action Buttons
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  // ## New Share Tracking Button
-                  if (widget.shipment['booking_status'] != 'Completed' &&
-                      canShareTracking) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.share),
-                        label: const Text('Share Tracking'),
-                        onPressed: _showShareTrackingDialog,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Complaint Button below
-                  if (canFileComplaint)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: Icon(Icons.report_problem),
-                        label: Text('fileAComplaint'.tr()),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ComplaintPage(
-                                preFilledShipmentId:
-                                widget.shipment['shipment_id'],
-                                editMode: false,
-                                complaintData: {},
+                // Action Buttons
+                Container(
+                  margin: EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      // ## New Share Tracking Button
+                      if (widget.shipment['booking_status'] != 'Completed' &&
+                          canShareTracking) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.share),
+                            label: const Text('Share Tracking'),
+                            onPressed: _showShareTrackingDialog,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              elevation: 2,
                             ),
-                          );
-                        },
-
-                        //Rating button below
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                        ),
-                      ),
-                    ),
-                  SizedBox(height: 12),
-                  if (canRate)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.star),
-                        label: Text(
-                          isRatingPeriodExpired
-                              ? 'ratingPeriodExpired'.tr()
-                              : (editLimitReached
-                              ? 'editLimitReached'.tr()
-                              : (currentEditCount == 0
-                              ? 'rateThisShipment'.tr()
-                              : '${'editRating'.tr()} ($currentEditCount/3)')),
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: canRate
-                              ? Colors.blue
-                              : Colors.grey[400],
-                          foregroundColor: canRate
-                              ? Colors.black
-                              : Colors.grey[700],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadiusGeometry.circular(20),
                           ),
                         ),
-                        onPressed: canRate
-                            ? () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => Rating(
-                                shipmentId:
-                                widget.shipment['shipment_id'],
-                              ),
-                            ),
-                          );
+                        const SizedBox(height: 12),
+                      ],
 
-                          if (result != null && result is int) {
-                            // Update the local state
-                            setState(() {
-                              ratingEditCount[shipmentID] = result;
-                            });
-
-                            // Show snackbar
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'ratingSavedSuccessfully'.tr(),
+                      // Complaint Button below
+                      if (canFileComplaint)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: Icon(Icons.report_problem),
+                            label: Text('fileAComplaint'.tr()),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ComplaintPage(
+                                    preFilledShipmentId:
+                                    widget.shipment['shipment_id'],
+                                    editMode: false,
+                                    complaintData: {},
                                   ),
                                 ),
                               );
+                            },
+
+                            //Rating button below
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                          ),
+                        ),
+                      SizedBox(height: 12),
+                      if (canRate)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.star),
+                            label: Text(
+                              isRatingPeriodExpired
+                                  ? 'ratingPeriodExpired'.tr()
+                                  : (editLimitReached
+                                  ? 'editLimitReached'.tr()
+                                  : (currentEditCount == 0
+                                  ? 'rateThisShipment'.tr()
+                                  : '${'editRating'.tr()} ($currentEditCount/3)')),
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: canRate
+                                  ? Colors.blue
+                                  : Colors.grey[400],
+                              foregroundColor: canRate
+                                  ? Colors.black
+                                  : Colors.grey[700],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadiusGeometry.circular(20),
+                              ),
+                            ),
+                            onPressed: canRate
+                                ? () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => Rating(
+                                    shipmentId:
+                                    widget.shipment['shipment_id'],
+                                  ),
+                                ),
+                              );
+
+                              if (result != null && result is int) {
+                                // Update the local state
+                                setState(() {
+                                  ratingEditCount[shipmentID] = result;
+                                });
+
+                                // Show snackbar
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'ratingSavedSuccessfully'.tr(),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                Navigator.pop(context, result);
+                              }
                             }
-                            Navigator.pop(context, result);
-                          }
-                        }
-                            : null,
-                      ),
-                    ),
-                ],
-              ),
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 24),
+              ],
             ),
-            SizedBox(height: 24),
-          ],
-        ),
-      ),
+          ),
+        )
     );
   }
 

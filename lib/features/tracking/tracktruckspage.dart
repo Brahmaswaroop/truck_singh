@@ -333,48 +333,50 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          GoogleMap(
-            onMapCreated: (controller) {
-              _mapController = controller;
-              _zoomToFitMarkers();
-            },
-            initialCameraPosition: const CameraPosition(
-              target: LatLng(20.5937, 78.9629),
-              zoom: 5,
-            ),
-            markers: Set.of(_markers.values),
-          ),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
-          if (!_isLoading && _errorMessage != null)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                color: Colors.white.withOpacity(0.8),
-                child: Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            GoogleMap(
+              onMapCreated: (controller) {
+                _mapController = controller;
+                _zoomToFitMarkers();
+              },
+              initialCameraPosition: const CameraPosition(
+                target: LatLng(20.5937, 78.9629),
+                zoom: 5,
               ),
+              markers: Set.of(_markers.values),
             ),
-          if (!_isLoading && _errorMessage == null && _markers.isEmpty)
-            const Center(
-              child: Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
+            if (!_isLoading && _errorMessage != null)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  color: Colors.white.withOpacity(0.8),
                   child: Text(
-                    'No active trucks found for your account.',
-                    style: TextStyle(fontSize: 16),
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+            if (!_isLoading && _errorMessage == null && _markers.isEmpty)
+              const Center(
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'No active trucks found for your account.',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _zoomToFitMarkers,

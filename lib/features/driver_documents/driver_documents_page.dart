@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:logistics_toolkit/config/theme.dart';
 import '../../services/user_data_service.dart';
+import '../notifications/notification_service.dart';
 
 enum UserRole { agent, truckOwner, driver }
 
@@ -26,6 +27,7 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
   List<Map<String, dynamic>> _filteredDrivers = [];
   String? _loggedInUserId;
   UserRole? _userRole;
+  String? _loggedInUserName;
   late AnimationController _animationController;
   String _selectedStatusFilter = 'All';
   final List<String> _statusFilters = [
@@ -71,6 +73,28 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
     _animationController.dispose();
     super.dispose();
   }
+  // --- NEW HELPER FUNCTION ---
+  /// Finds the first agent/owner associated with a driver.
+  /// Returns the owner's custom_user_id.
+  Future<String?> _getPrimaryOwnerForDriver(String driverId) async {
+    try {
+      // Find the *first* relation for this driver
+      final response = await supabase
+          .from('driver_relation')
+          .select('owner_custom_id')
+          .eq('driver_custom_id', driverId)
+          .limit(1) // Get the first owner
+          .maybeSingle(); // Use maybeSingle in case there's no owner
+
+      if (response != null && response['owner_custom_id'] != null) {
+        return response['owner_custom_id'] as String;
+      }
+      return null;
+    } catch (e) {
+      print('Error finding driver owner: $e');
+      return null;
+    }
+  }
 
   Future<void> _initializeData() async {
     await _detectUserRole();
@@ -89,6 +113,7 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
           .single();
 
       _loggedInUserId = profile['custom_user_id'];
+      _loggedInUserName = profile['name'];
       final userType = profile['role'];
 
       if (userType == 'agent') {
@@ -301,6 +326,54 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
         'user_id': supabase.auth.currentUser?.id,
       });
 
+      if (_userRole == UserRole.driver && driverId == _loggedInUserId) {
+        // SCENARIO 1: Driver uploads
+        final ownerId = await _getPrimaryOwnerForDriver(driverId);
+        final driverName = _drivers.firstWhere(
+              (d) => d['custom_user_id'] == driverId,
+          orElse: () => {'name': 'A driver'},
+        )['name'] ?? 'A driver';
+
+        // 1. Notify the owner
+        if (ownerId != null) {
+          NotificationService.sendPushNotificationToUser(
+            recipientId: ownerId,
+            title: 'Document Uploaded'.tr(),
+            message: '$driverName has uploaded a new document: $docType'.tr(),
+            data: {'type': 'document_upload', 'driver_id': driverId},
+          );
+        }
+
+        // 2. Notify self (the driver)
+        NotificationService.sendPushNotificationToUser(
+          recipientId: _loggedInUserId!,
+          title: 'Upload Successful'.tr(),
+          message: 'You have successfully uploaded your $docType.'.tr(),
+          data: {'type': 'document_upload_self', 'doc_type': docType},
+        );
+
+      }
+      else if (_userRole == UserRole.agent || _userRole == UserRole.truckOwner) {
+        final agentName = _loggedInUserName ?? "Your manager";
+        final driverName = _drivers.firstWhere(
+              (d) => d['custom_user_id'] == driverId,
+          orElse: () => {'name': 'the driver'},
+        )['name'] ?? 'the driver';
+
+        NotificationService.sendPushNotificationToUser(
+          recipientId: driverId,
+          title: 'Document Uploaded'.tr(),
+          message: '$agentName has uploaded a new document for you: $docType'.tr(),
+          data: {'type': 'document_upload', 'doc_type': docType},
+        );
+        NotificationService.sendPushNotificationToUser(
+          recipientId: _loggedInUserId!,
+          title: 'Upload Successful'.tr(),
+          message: 'You have successfully uploaded $docType for $driverName.'.tr(),
+          data: {'type': 'document_upload_self', 'driver_id': driverId},
+        );
+      }
+
       _showSuccessSnackBar('Document uploaded successfully');
       await _loadDriverDocuments();
     } catch (e) {
@@ -310,7 +383,6 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
         _uploadingDriverId = null;
         _uploadingDocType = null;
       });
-      // re-evaluate filters immediately after upload
       _applyStatusFilter();
     }
   }
@@ -345,7 +417,16 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
         'p_reviewed_by': supabase.auth.currentUser?.id,
         'p_reviewed_at': DateTime.now().toIso8601String(),
       });
-
+      NotificationService.sendPushNotificationToUser(
+        recipientId: driverId,
+        title: 'Document Approved'.tr(),
+        message: 'Your document ($docType) has been approved by your manager.'.tr(),
+        data: {
+          'type': 'document_status',
+          'doc_type': docType,
+          'status': 'approved',
+        },
+      );
       _showSuccessSnackBar('Document approved');
       await _loadDriverDocuments();
       _applyStatusFilter();
@@ -400,7 +481,16 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
         'p_rejection_reason': reason,
         'p_reviewed_at': DateTime.now().toIso8601String(),
       });
-
+      NotificationService.sendPushNotificationToUser(
+        recipientId: driverId,
+        title: 'Document Rejected'.tr(),
+        message: 'Your document ($docType) was rejected. Reason: $reason'.tr(),
+        data: {
+          'type': 'document_status',
+          'doc_type': docType,
+          'status': 'rejected',
+        },
+      );
       _showSuccessSnackBar('Document rejected');
       await _loadDriverDocuments();
       _applyStatusFilter();

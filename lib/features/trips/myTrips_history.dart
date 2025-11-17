@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:logistics_toolkit/features/trips/shipment_details.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,7 +17,6 @@ import 'myTrips_Services.dart';
 import 'shipment_card.dart' as shipment_card;
 import 'package:easy_localization/easy_localization.dart';
 
-
 enum TaxType { withinState, outsideState }
 
 class MyTripsHistory extends StatefulWidget {
@@ -27,13 +27,13 @@ class MyTripsHistory extends StatefulWidget {
 }
 
 class _MyTripsHistoryPageState extends State<MyTripsHistory> {
-  // Shipment, filter, and cached state
   List<Map<String, dynamic>> shipments = [];
   List<Map<String, dynamic>> filteredShipments = [];
   String? customUserId;
+  String? authUserId;
   String? role;
   String? selectedMonth;
-
+  Set<String> _invoiceRequests = {};
   Set<String> ratedShipments = {};
   Map<String, int> ratingEditCount = {};
   bool loading = true;
@@ -88,8 +88,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       _prefs = prefs;
       loadCachedShipments();
     });
-    _loadUser();
-    fetchShipments();
+    _loadUserAndFetchShipments();
     fetchEditCounts();
     for (var shipment in shipments) {
       final shipmentId = shipment['shipment_id'].toString();
@@ -99,6 +98,11 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
           ? PdfState.uploaded
           : PdfState.notGenerated;
     }
+  }
+
+  Future<void> _loadUserAndFetchShipments() async {
+    await _loadUser();
+    await fetchShipments();
   }
 
   Future<void> _loadUser() async {
@@ -111,11 +115,16 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         .eq('user_id', currentUserId)
         .maybeSingle();
 
-    setState(() {
-      customUserId = userProfile?['custom_user_id'];
-      role = userProfile?['role'];
-    });
-    print("Logged in as: customUserId=$customUserId, role=$role");
+    if (mounted) {
+      setState(() {
+        authUserId = currentUserId;
+        customUserId = userProfile?['custom_user_id'];
+        role = userProfile?['role'];
+      });
+    }
+    print(
+      "Logged in as: authUserId=$authUserId, customUserId=$customUserId, role=$role",
+    );
   }
 
   Future<Map<String, String?>> fetchCustomerNameAndMobile(
@@ -142,25 +151,30 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         .from('ratings')
         .select(
       'shipment_id, edit_count',
-    ); // Corrected 'shipmentId' to 'shipment_id'
+    )
+        .eq('rater_id', Supabase.instance.client.auth.currentUser!.id);
+
     if (response.isNotEmpty) {
-      setState(() {
-        for (var row in response) {
-          ratingEditCount[row['shipment_id']] =
-          row['edit_count']; // Corrected 'shipmentId' to 'shipment_id'
-        }
-      });
+      if (mounted) {
+        setState(() {
+          for (var row in response) {
+            ratingEditCount[row['shipment_id']] = row['edit_count'];
+          }
+        });
+      }
     }
   }
 
   Future<void> loadCachedShipments() async {
     final cachedData = _prefs?.getString('shipments_cache');
     if (cachedData != null) {
-      setState(() {
-        shipments = List<Map<String, dynamic>>.from(jsonDecode(cachedData));
-        filteredShipments = shipments;
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          shipments = List<Map<String, dynamic>>.from(jsonDecode(cachedData));
+          filteredShipments = shipments;
+          loading = false;
+        });
+      }
     }
   }
 
@@ -171,72 +185,100 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
   }
 
   Future<void> fetchShipments() async {
-    setState(() => loading = true);
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    print('My current UID: $userId');
-
-    if (userId == null) {
-      setState(() {
-        loading = false;
-        shipments = [];
-        filteredShipments = [];
-      });
-      return;
+    if (mounted) {
+      setState(() => loading = true);
     }
+    print('Fetching shipments for custom_user_id: $customUserId');
 
-    // Fetch custom user ID
-    final res = await _supabaseService.getShipmentsForUser(userId);
-    print('Raw shipments response: $res');
+    try {
+      if (customUserId == null) {
+        print("customUserId is null, cannot fetch shipments.");
+        if (mounted) {
+          setState(() {
+            shipments = [];
+            filteredShipments = [];
+          });
+        }
+        return;
+      }
 
-    setState(() {
-      loading = false;
+      final createdShipments = await Supabase.instance.client
+          .from('shipment')
+          .select()
+          .eq('shipper_id', customUserId!);
+
+      // Query 2: Shipments I was assigned to
+      final assignedShipments = await Supabase.instance.client
+          .from('shipment')
+          .select()
+          .eq('assigned_agent', customUserId!);
+      final allShipments = <String, Map<String, dynamic>>{};
+      for (var shipment in createdShipments) {
+        allShipments[shipment['shipment_id']] = shipment;
+      }
+      for (var shipment in assignedShipments) {
+        allShipments[shipment['shipment_id']] = shipment;
+      }
+
+      final res = allShipments.values.toList();
+
+      print('Raw shipments response: $res');
+      shipments = res.where((s) {
+        final status = s['booking_status']?.toString().toLowerCase();
+        return status == 'completed';
+      }).toList();
+      await _prefs?.setString('shipments_cache', jsonEncode(shipments));
+      await fetchEditCounts();
+      await checkPdfStates();
+      try {
+        final requestRes = await Supabase.instance.client
+            .from('invoice_requests')
+            .select('shipment_id')
+            .eq('requested_to', customUserId!);
+
+        _invoiceRequests =
+            requestRes.map((r) => r['shipment_id'].toString()).toSet();
+        print('Active invoice requests: $_invoiceRequests');
+      } catch (e) {
+        print('Error fetching invoice requests: $e');
+        _invoiceRequests = {};
+      }
+      applyFilters();
+    } catch (e) {
+      print("Error fetching shipments: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading trips: ${e.toString()}')),
+        );
+      }
       shipments = [];
       filteredShipments = [];
-    });
-
-    shipments = res.where((s) {
-      final status = s['booking_status']?.toString().toLowerCase();
-      print(status);
-      return status == 'completed';
-    }).toList();
-
-    print("Fetched shipments count: ${res.length}");
-    for (var s in res) {
-      print(
-        "Shipment ID: ${s['shipment_id']}, booking_status: '${s['booking_status']}'",
-      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          loading = false;
+          _refreshController.refreshCompleted();
+        });
+      }
     }
-
-    print("Filtered completed shipments count: ${shipments.length}");
-    for (var s in shipments) {
-      print(
-        "Completed shipment ID: ${s['shipment_id']}, booking_status: '${s['booking_status']}'",
-      );
-    }
-
-    filteredShipments = shipments;
-    await _prefs?.setString('shipments_cache', jsonEncode(shipments));
-    await fetchEditCounts();
-    await checkPdfStates();
-
-    setState(() {
-      loading = false;
-      _refreshController.refreshCompleted();
-    });
   }
 
   void searchShipments(String query) {
-    setState(() {
-      searchQuery = query;
-      applyFilters();
-    });
+    if (mounted) {
+      setState(() {
+        searchQuery = query;
+        applyFilters();
+      });
+    }
   }
 
   void filterByStatus(String status) {
-    setState(() {
-      statusFilter = status;
-      applyFilters();
-    });
+    if (mounted) {
+      setState(() {
+        statusFilter = status;
+        applyFilters();
+      });
+    }
   }
 
   void applyFilters() {
@@ -411,7 +453,6 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     }
   }
 
-  // --------- INTEGRATED INVOICE FUNCTIONS START ----------
   Future fetchBillingAddressForShipment(Map shipment) async {
     final shipperId = shipment['shipper_id'];
     if (shipperId == null) return null;
@@ -459,15 +500,15 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       ) async {
     return await showGeneralDialog<CompanyAddress>(
       context: context,
-      barrierDismissible: false, // mandatory, can't close by tapping outside
+      barrierDismissible: false,
       barrierLabel: 'company_address'.tr(),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (ctx, anim1, anim2) {
-        return const SizedBox.shrink(); // required placeholder
+        return const SizedBox.shrink();
       },
       transitionBuilder: (ctx, anim, _, child) {
         final curvedValue =
-            Curves.easeInOut.transform(anim.value) - 1.0; // bounce effect
+            Curves.easeInOut.transform(anim.value) - 1.0;
 
         return Transform(
           transform: Matrix4.translationValues(0.0, curvedValue * -50, 0.0),
@@ -502,7 +543,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                           const SizedBox(width: 8),
                           Text(
                             'select_company_address'.tr(),
-                            style: Theme.of(context).textTheme.titleMedium
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -549,13 +592,6 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
   }
 
   Future checkPdfStates() async {
-    final userId = Supabase.instance.client.auth.currentUser!.id;
-    final profile = await Supabase.instance.client
-        .from('user_profiles')
-        .select('custom_user_id,name')
-        .eq('user_id', userId)
-        .maybeSingle();
-    final shipperId = profile?['custom_user_id'];
     for (var shipment in shipments) {
       final shipmentId = shipment['shipment_id'].toString();
       final appDir = await getApplicationDocumentsDirectory();
@@ -563,21 +599,29 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       if (await File(filePath).exists()) {
         pdfStates[shipmentId] = PdfState.downloaded;
       } else {
-        final url = Supabase.instance.client.storage
-            .from('invoices')
-            .getPublicUrl('$shipperId/$shipmentId.pdf');
-        final response = await http.head(Uri.parse(url));
-        pdfStates[shipmentId] = response.statusCode == 200
-            ? PdfState.uploaded
-            : PdfState.notGenerated;
+        // --- THIS IS THE FIX ---
+        // The 'Invoice_link' is the FULL public URL. We don't need getPublicUrl.
+        final String? pdfUrl = shipment['Invoice_link'] as String?;
+        if (pdfUrl != null && pdfUrl.isNotEmpty) {
+          final response = await http.head(Uri.parse(pdfUrl)); // Use the URL directly
+          pdfStates[shipmentId] = response.statusCode == 200
+              ? PdfState.uploaded
+              : PdfState.notGenerated;
+        } else {
+          pdfStates[shipmentId] = PdfState.notGenerated;
+        }
+        // --- END OF FIX ---
       }
     }
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future generateInvoice(Map<String, dynamic> shipment) async {
     _fetchedBillingAddress = await fetchBillingAddressForShipment(shipment);
     if (_fetchedBillingAddress == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('billing_address_not_found'.tr())));
@@ -586,6 +630,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
 
     final companyAddresses = await fetchCompanyAddresses();
     if (companyAddresses.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('no_company_addresses'.tr())));
@@ -594,11 +639,13 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     if (companyAddresses.length == 1) {
       _selectedCompanyAddress = companyAddresses.first;
     } else {
+      if (!mounted) return;
       _selectedCompanyAddress = await showCompanyAddressDialog(
         context,
         companyAddresses,
       );
       if (_selectedCompanyAddress == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('please_select_company_address'.tr())),
         );
@@ -637,7 +684,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     shipment['hasInvoice'] = true;
 
     pdfStates[shipment['shipment_id'].toString()] = PdfState.uploaded;
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
 
     // Optionally: update backend with the link
     final shipmentId = shipment['shipment_id'].toString();
@@ -646,57 +695,64 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         .update({'Invoice_link': invoiceUrl})
         .eq('shipment_id', shipmentId);
 
+    // NEW: Update invoice_requests table
+    try {
+      // Changed from update() to delete()
+      await Supabase.instance.client
+          .from('invoice_requests')
+          .delete()
+          .eq('shipment_id', shipmentId);
+      _invoiceRequests.remove(shipmentId); // Remove from local cache
+    } catch (e) {
+      print("Error updating invoice request status: $e");
+    }
+
+    // --- NEW: SEND NOTIFICATION TO SHIPPER ---
+    try {
+      await _sendInvoiceGeneratedNotification(shipment);
+    } catch (e) {
+      print("Error sending 'invoice generated' notification: $e");
+    }
+    // --- END NEW ---
+
+    if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('invoice_generated'.tr())));
   }
 
-  //new download function
+  // --- THIS IS THE CORRECTED FUNCTION ---
   Future downloadInvoice(Map shipment) async {
     final shipmentId = shipment['shipment_id'].toString();
-    final userId = Supabase.instance.client.auth.currentUser!.id;
 
-    // Get user profile
-    final profile = await Supabase.instance.client
-        .from('user_profiles')
-        .select('custom_user_id,name,role')
-        .eq('user_id', userId)
-        .maybeSingle();
-    final shipperId = profile?['custom_user_id'];
-    final userRole =
-    profile?['role'];
-
-    String? pdfPath;
-
-    if (userRole == 'agent') {
-      pdfPath = '$shipperId/$shipmentId.pdf';
-    } else if (userRole == 'shipper') {
-      pdfPath = shipment['Invoice_link'] as String?;
-      if (pdfPath == null || pdfPath.isEmpty) {
-        final shipmentRow = await Supabase.instance.client
-            .from('shipment')
-            .select('Invoice_link')
-            .eq('shipment_id', shipmentId)
-            .maybeSingle();
-        pdfPath = shipmentRow?['Invoice_link'] as String?;
-      }
+    // The path is retrieved from the 'Invoice_link' column, which is the source of truth.
+    String? pdfUrl = shipment['Invoice_link'] as String?;
+    if (pdfUrl == null || pdfUrl.isEmpty) {
+      // As a fallback, check the database again
+      final shipmentRow = await Supabase.instance.client
+          .from('shipment')
+          .select('Invoice_link')
+          .eq('shipment_id', shipmentId)
+          .maybeSingle();
+      pdfUrl = shipmentRow?['Invoice_link'] as String?;
     }
 
-    if (pdfPath != null && pdfPath.isNotEmpty) {
-      final publicUrlResponse = Supabase.instance.client.storage
-          .from('invoices')
-          .getPublicUrl(pdfPath);
-      final pdfUrl = Supabase.instance.client.storage
-          .from('invoices')
-          .getPublicUrl(pdfPath);
-      if (pdfUrl == null || pdfUrl.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('could_not_generate_pdf_url'.tr())),
-        );
-        return;
-      }
+    // Check if pdfUrl is still null or empty
+    if (pdfUrl == null || pdfUrl.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('pdf_link_not_found'.tr())));
+      return;
+    }
 
+    print("Attempting to download from URL: $pdfUrl"); // Debug print
+
+    try {
       final response = await http.get(Uri.parse(pdfUrl));
+
+      print("Download response status code: ${response.statusCode}"); // Debug print
+
       if (response.statusCode == 200) {
         final appDir = await getApplicationDocumentsDirectory();
         final localPath = '${appDir.path}/$shipmentId.pdf';
@@ -704,27 +760,38 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         await file.writeAsBytes(response.bodyBytes, flush: true);
 
         pdfStates[shipmentId] = PdfState.downloaded;
-        setState(() {});
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('pdf_downloaded'.tr())));
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('pdf_downloaded'.tr())));
+        }
       } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('pdf_could_not_be_downloaded'.tr())),
+          );
+        }
+      }
+    } catch (e) {
+      print("Error downloading PDF: $e");
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('pdf_could_not_be_downloaded'.tr())),
+          SnackBar(content: Text('PDF download failed: ${e.toString()}')),
         );
       }
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('pdf_link_not_found'.tr())));
     }
   }
 
+  // --- THIS IS THE UPDATED FUNCTION ---
   void previewInvoice(BuildContext context, String shipmentId) async {
     final appDir = await getApplicationDocumentsDirectory();
     final localPath = '${appDir.path}/$shipmentId.pdf';
     final file = File(localPath);
+
     if (await file.exists()) {
+      // File exists, open it
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -732,15 +799,53 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('pdf_not_found'.tr())));
+      // File doesn't exist, try to download it
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF not found, re-downloading...')),
+      );
+
+      // Find the shipment map
+      final shipment = shipments.firstWhere(
+            (s) => s['shipment_id'] == shipmentId,
+        orElse: () => <String, dynamic>{}, // Return empty map if not found
+      );
+
+      if (shipment.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: Shipment data not found.')),
+        );
+        return;
+      }
+
+      // Call download function
+      await downloadInvoice(shipment);
+
+      // Check again if file exists after download
+      if (await file.exists()) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PdfPreviewScreen(localPath: localPath),
+          ),
+        );
+      } else {
+        // If it still fails, show the final error
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF download failed.')),
+        );
+      }
     }
   }
+  // --- END OF UPDATED FUNCTION ---
 
   Future<void> confirmAndDelete(BuildContext context, Map<String, dynamic> shipment) async {
     final shipmentId = shipment['shipment_id'].toString();
     // Show confirmation dialog
+    if (!mounted) return;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -762,29 +867,39 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     if (result != true) return;
 
     try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) throw Exception('User not authenticated');
-      final profile = await Supabase.instance.client
-          .from('user_profiles')
-          .select('custom_user_id')
-          .eq('user_id', userId)
-          .maybeSingle();
-      final shipperId = profile?['custom_user_id'];
-      if (shipperId == null) throw Exception('Shipper ID not found');
-      final bucketFilePath = '$shipperId/$shipmentId.pdf';
+      // Get the path from the shipment data
+      final pdfPath = shipment['Invoice_link'] as String?;
+      if (pdfPath == null || pdfPath.isEmpty) {
+        throw Exception('Invoice link not found in shipment data');
+      }
+
+      // --- THIS IS THE FIX ---
+      // We must extract the relative path from the full URL to delete from storage
+      // Full URL: https://[...].supabase.co/storage/v1/object/public/invoices/TRUK1147/SHP-001.pdf
+      // Relative Path: TRUK1147/SHP-001.pdf
+      final bucketPath = pdfPath.split('/invoices/').last;
+
+      // Delete PDF from Supabase bucket using the relative path
       await Supabase.instance.client.storage
           .from('invoices')
-          .remove([bucketFilePath]);
+          .remove([bucketPath]);
+      // --- END OF FIX ---
+
+      // Delete local PDF file
       final appDir = await getApplicationDocumentsDirectory();
       final localPath = '${appDir.path}/$shipmentId.pdf';
       final file = File(localPath);
       if (await file.exists()) {
         await file.delete();
       }
+
+      // Update Supabase to clear invoice link and status
       await Supabase.instance.client
           .from('shipment')
           .update({'Invoice_link': null})
           .eq('shipment_id', shipmentId);
+
+      // Update local shipment map and UI button state
       shipment['Invoice_link'] = null;
       shipment['hasInvoice'] = false;
       if (mounted) {
@@ -796,9 +911,11 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error deleting invoice: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting invoice: $e')),
+        );
+      }
     }
   }
 
@@ -809,15 +926,27 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     if (await file.exists()) {
       await file.delete();
       pdfStates[shipmentId] = PdfState.notGenerated;
-      setState(() {});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('pdf_deleted'.tr())));
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('pdf_deleted'.tr())));
+      }
     }
   }
 
   void requestInvoice(Map<String, dynamic> shipment) async {
-    final companyId = shipment['assigned_company'];
+    final companyId = shipment['assigned_agent']; // Use assigned_agent
+    if (companyId == null) {
+      print("Cannot request invoice: assigned_agent is null");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot request: No agent assigned')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -831,50 +960,118 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       await Supabase.instance.client.from('invoice_requests').insert({
         'shipment_id': shipment['shipment_id'],
         'requested_by': customUserId,
-        'requested_to': companyId,
+        'requested_to': companyId, // Use assigned_agent
       }).select();
 
       print("Invoice request logged in Supabase ✅: $response");
+
+      // --- NEW: SEND NOTIFICATION TO AGENT/OWNER ---
+      try {
+        await _sendInvoiceRequestNotification(shipment);
+      } catch (e) {
+        print("Error sending 'invoice request' notification: $e");
+      }
+      // --- END NEW ---
+
+      // --- NEW: Update UI immediately ---
+      if (mounted) {
+        setState(() {
+          _invoiceRequests.add(shipment['shipment_id']);
+        });
+      }
+      // --- END NEW ---
     } catch (e) {
       print("Exception while requesting invoice: $e");
     }
   }
 
   Future shareInvoice(Map shipment) async {
-    final userId = Supabase.instance.client.auth.currentUser!.id;
-    final profile = await Supabase.instance.client
-        .from('user_profiles')
-        .select('custom_user_id')
-        .eq('user_id', userId)
-        .maybeSingle();
-    final shipperId = profile?['custom_user_id'];
     final shipmentId = shipment['shipment_id'].toString();
-    final pdfPath = '$shipperId/$shipmentId.pdf';
+
+    // --- THIS IS THE FIX ---
+    // The 'Invoice_link' is the FULL public URL.
+    final publicUrl = shipment['Invoice_link'] as String?;
+
+    if (publicUrl == null || publicUrl.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('pdf_link_not_found'.tr())));
+      return;
+    }
+    // --- END OF FIX ---
+
     try {
-      final response = await Supabase.instance.client
-          .from('shipment')
-          .update({'Invoice_link': pdfPath})
-          .eq('shipment_id', shipmentId);
-      print('Response update shipment: $response');
-      if (response is Map &&
-          response.containsKey('error') &&
-          response['error'] != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to share invoice: ${response['error']}'),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('invoice_shared_successfully'.tr())),
-        );
-      }
+      // Share the public URL
+      await Share.share(
+          'Here is the invoice for shipment $shipmentId: $publicUrl',
+          subject: 'Invoice for $shipmentId');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('invoice_shared_successfully'.tr())));
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error sharing invoice: $e')));
     }
   }
+
+  // --- NEW NOTIFICATION HELPER FUNCTIONS ---
+
+  /// Sends a notification to the assigned agent/owner
+  Future<void> _sendInvoiceRequestNotification(Map<String, dynamic> shipment) async {
+    final assignedAgentId = shipment['assigned_agent'] as String?;
+    if (assignedAgentId == null) return;
+
+    final shipmentId = shipment['shipment_id'];
+    // Try to get shipper name, default to 'A shipper'
+    final shipperProfile = await Supabase.instance.client
+        .from('user_profiles')
+        .select('name')
+        .eq('custom_user_id', shipment['shipper_id'])
+        .maybeSingle();
+    final shipperName = shipperProfile?['name'] ?? 'A shipper';
+
+    await _sendNotification(
+      assignedAgentId,
+      "Invoice Requested",
+      "$shipperName requested an invoice for shipment $shipmentId.",
+    );
+  }
+
+  /// Sends a notification to the original shipper
+  Future<void> _sendInvoiceGeneratedNotification(Map<String, dynamic> shipment) async {
+    final shipperId = shipment['shipper_id'] as String?;
+    if (shipperId == null) return;
+
+    final shipmentId = shipment['shipment_id'];
+
+    await _sendNotification(
+      shipperId,
+      "Invoice Ready",
+      "Your invoice for shipment $shipmentId is generated and ready to view.",
+    );
+  }
+
+  /// Calls your Supabase RPC function to send the push notification
+  Future<void> _sendNotification(String receiverCustomId, String title, String message) async {
+    try {
+      // Using the 'send-user-notification' function from your screenshot
+      await Supabase.instance.client.rpc('send-user-notification', params: {
+        'receiver_id': receiverCustomId,
+        'title': title,
+        'message': message,
+      });
+      print("Notification RPC called for User: $receiverCustomId");
+    } catch (e) {
+      print("Error calling RPC 'send-user-notification': $e");
+    }
+  }
+
+  // --- END NEW NOTIFICATION FUNCTIONS ---
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -893,18 +1090,21 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
           labelText: label,
           prefixIcon: icon != null ? Icon(icon) : null,
           filled: true,
+          //fillColor: Colors.grey.shade100,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
+            //borderSide: BorderSide(color: Colors.grey.shade400),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
+            //borderSide: BorderSide(color: Colors.grey.shade300),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
               color: Colors.blueAccent,
               width: 1.5,
-            ),
+            ), // theme accent
           ),
         ),
       ),
@@ -928,7 +1128,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
 
     return StatefulBuilder(
       builder: (context, setState) {
-        final shipmentsToShow = groupedShipments[selectedMonth]!;
+        // Handle case where selectedMonth might not exist in keys yet
+        final shipmentsToShow = groupedShipments[selectedMonth] ?? [];
         return Scaffold(
           appBar: AppBar(
             title: Text('shipment_history'.tr()),
@@ -990,7 +1191,6 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                   ),
                 ),
                 const Divider(thickness: 1),
-
                 Expanded(
                   child: shipmentsToShow.isEmpty
                       ? Center(
@@ -1006,10 +1206,26 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                     itemCount: shipmentsToShow.length,
                     itemBuilder: (_, i) {
                       final shipment = shipmentsToShow[i];
+                      final shipmentId =
+                      shipment['shipment_id'].toString();
+                      final isRequested =
+                      _invoiceRequests.contains(shipmentId);
+
                       return shipment_card.ShipmentCard(
                         shipment: shipment,
                         pdfStates: pdfStates,
+                        isInvoiceRequested: isRequested,
                         onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ShipmentDetailsPage(
+                                    shipment: shipment,
+                                    isHistoryPage: true,
+                                  ),
+                            ),
+                          );
                           print(
                             "Building card for shipment ID: ${shipment['shipment_id']}, pdfState: $pdfStates",
                           );
@@ -1020,13 +1236,18 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                             shipment['shipment_id'].toString(),
                           );
                         },
+                        // if (pdfState == PdfState.uploaded)
                         onDownloadInvoice: () async {
                           await downloadInvoice(shipment);
-                          setState(() {
-                            pdfStates[shipment['shipment_id']
-                                .toString()] =
-                                PdfState.downloaded;
-                          });
+
+                          // Update state to "downloaded"
+                          if (mounted) {
+                            setState(() {
+                              pdfStates[shipment['shipment_id']
+                                  .toString()] =
+                                  PdfState.downloaded;
+                            });
+                          }
                         },
 
                         onRequestInvoice: () {
@@ -1048,6 +1269,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                             _billtoMobileNumberController.text =
                                 customerInfo['mobile_number'] ?? '';
                           }
+                          if (!mounted) return;
                           await showDialog(
                             context: context,
                             builder: (_) => StatefulBuilder(
@@ -1523,14 +1745,14 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                                                     await generateInvoice(
                                                       shipment,
                                                     );
-                                                    setState(() {
-                                                      pdfStates[shipment['shipment_id']
-                                                          .toString()] =
-                                                          PdfState
-                                                              .uploaded;
-                                                    });
-
-                                                    // Clear fields
+                                                    if (mounted) {
+                                                      setState(() {
+                                                        pdfStates[shipment['shipment_id']
+                                                            .toString()] =
+                                                            PdfState
+                                                                .uploaded;
+                                                      });
+                                                    }
                                                     _companyNameController
                                                         .clear();
                                                     _cMobileNumberController
@@ -1590,24 +1812,21 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                             ),
                           );
                         },
-
                         onDeleteInvoice: () async {
                           await confirmAndDelete(context, shipment);
-
-                          // Update state to "notGenerated"
-                          setState(() {
-                            pdfStates[shipment['shipment_id']
-                                .toString()] =
-                                PdfState.notGenerated;
-                          });
+                          if (mounted) {
+                            setState(() {
+                              pdfStates[shipment['shipment_id']
+                                  .toString()] =
+                                  PdfState.notGenerated;
+                            });
+                          }
                         },
-
                         onShareInvoice: () async {
                           await shareInvoice(shipment);
                         },
                         customUserId: customUserId,
                         role: role,
-                        // pdfStates: pdfStates,
                       );
                     },
                   ),
@@ -1702,10 +1921,10 @@ class ShipmentSearchDelegate extends SearchDelegate<String> {
   }
 }
 
-// PDF Preview Screen
 class PdfPreviewScreen extends StatelessWidget {
   final String localPath;
   const PdfPreviewScreen({required this.localPath, Key? key}) : super(key: key);
+
   void sharePdf() {
     Share.shareXFiles([XFile(localPath)], text: 'sharing_invoice_pdf'.tr());
   }
@@ -1723,7 +1942,7 @@ class PdfPreviewScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SafeArea(child: PDFView(filePath: localPath)),
+      body: PDFView(filePath: localPath),
     );
   }
 }

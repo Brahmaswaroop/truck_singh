@@ -5,6 +5,8 @@ import '../../config/theme.dart';
 import 'otp_activation_service.dart';
 import 'otp_verification_page.dart';
 import 'account_reactivation_service.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../notifications/notification_service.dart';
 
 class UnableAccountPage extends StatefulWidget {
   final Map<String, dynamic> userProfile;
@@ -222,6 +224,15 @@ class _UnableAccountPageState extends State<UnableAccountPage> {
       if (!mounted) return;
 
       if (result['ok'] == true) {
+        NotificationService.sendPushNotificationToUser(
+          recipientId: disablerId,
+          title: 'Account Reactivation Request'.tr(),
+          message: '$userName ' + 'is requesting to reactivate their account.'.tr() + '\n' + 'Message:'.tr() + ' $message',
+          data: {
+            'type': 'reactivation_request',
+            'requester_id': customUserId,
+          },
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../invoice/services/invoice_pdf_service.dart';
 import 'package:easy_localization/easy_localization.dart';
+import '../ratings/presentation/screen/rating.dart';
 
 class ShipmentCard extends StatefulWidget {
   final Map<String, dynamic> shipment;
@@ -14,6 +15,7 @@ class ShipmentCard extends StatefulWidget {
   final String? customUserId;
   final String? role;
   final Map<String, PdfState> pdfStates;
+  final bool isInvoiceRequested;
 
   const ShipmentCard({
     super.key,
@@ -28,6 +30,7 @@ class ShipmentCard extends StatefulWidget {
     required this.pdfStates,
     required this.role,
     required this.customUserId,
+    this.isInvoiceRequested = false,
   });
 
   @override
@@ -158,33 +161,128 @@ class _ShipmentCardState extends State<ShipmentCard> {
     final shipperId = shipment['shipper_id']?.toString();
     final shipmentId = shipment['shipment_id'].toString();
     final assignCompanyId = shipment['assigned_agent']?.toString();
+    final driverId = shipment['assigned_driver']?.toString();
     final invoicePath = shipment['Invoice_link'];
     final hasInvoice =
         invoicePath != null && invoicePath.toString().trim().isNotEmpty;
     final state = widget.pdfStates[shipmentId] ?? PdfState.notGenerated;
 
     print("buildActionButtons: role=$role, customUserId=$customUserId, shipperId=$shipperId, assignedCompanyId=$assignCompanyId, hasInvoice=$hasInvoice, state=$state");
-// And optionally:
     print("Shipment: ${shipment['shipment_id']}, assigned_agent=${shipment['assigned_agent']}, shipper_id=${shipment['shipper_id']}");
+    bool isCreator = (role == 'truckowner' && customUserId == shipperId);
+    bool isAssigned = (role == 'truckowner' || role == 'agent' || role == 'company') && (customUserId == assignCompanyId);
+    bool canCreate = isCreator || isAssigned;
 
 
-    // Case 1: Shipper
-    if (role == 'shipper' && customUserId == shipperId.toString()) {
+    if (canCreate) {
       if (hasInvoice) {
         return Wrap(
           spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.start,
           children: [
-            SizedBox(
-              //width: 130,
-              child: ElevatedButton.icon(
-                onPressed: state == PdfState.downloaded
-                    ? null
-                    : widget.onDownloadInvoice,
-                icon: const Icon(Icons.download),
-                label: Text(
-                  state == PdfState.downloaded ? "downloaded".tr() : "download".tr(),
+            ElevatedButton.icon(
+              onPressed: state == PdfState.downloaded
+                  ? null
+                  : widget.onDownloadInvoice,
+              icon: const Icon(Icons.download, size: 18),
+              label: Text(
+                state == PdfState.downloaded
+                    ? "downloaded".tr()
+                    : "download".tr(),
+              ),
+              style: ElevatedButton.styleFrom(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 14)),
+            ),
+            IconButton(
+              onPressed:
+              state == PdfState.downloaded ? widget.onPreviewInvoice : null,
+              icon: const Icon(Icons.visibility),
+              tooltip: 'preview_pdf'.tr(),
+            ),
+            IconButton(
+              onPressed:
+              widget.onShareInvoice,
+              icon: const Icon(Icons.share),
+              tooltip: 'share_invoice'.tr(),
+            ),
+            IconButton(
+              onPressed: widget.onDeleteInvoice,
+              icon: const Icon(Icons.delete, color: Colors.red),
+              tooltip: 'delete_pdf'.tr(),
+            ),
+          ],
+        );
+      } else {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.isInvoiceRequested)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: Colors.blue.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          "invoice_requested_by_shipper".tr(),
+                          style: TextStyle(
+                              color: Colors.blue.shade800,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+            // The generate button
+            SizedBox(
+              child: ElevatedButton.icon(
+                onPressed: widget.onGenerateInvoice,
+                icon: const Icon(Icons.receipt),
+                label: Text("generate_invoice".tr()),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white),
+              ),
+            ),
+          ],
+        );
+      }
+    }
+
+    if (role == 'shipper' && customUserId == shipperId) {
+      if (hasInvoice) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ElevatedButton.icon(
+              onPressed: state == PdfState.downloaded
+                  ? null
+                  : widget.onDownloadInvoice,
+              icon: const Icon(Icons.download, size: 18),
+              label: Text(
+                state == PdfState.downloaded
+                    ? "downloaded".tr()
+                    : "download".tr(),
+              ),
+              style: ElevatedButton.styleFrom(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 14)),
             ),
             IconButton(
               onPressed:
@@ -195,72 +293,57 @@ class _ShipmentCardState extends State<ShipmentCard> {
           ],
         );
       } else {
-        return SizedBox(
-          //width: 160,
-          child: ElevatedButton.icon(
-            onPressed: widget.onRequestInvoice,
-            icon: const Icon(Icons.receipt_rounded),
-            label:  Text("request_invoice".tr()),
-          ),
-        );
-      }
-    }
-
-    // Case 2: Assigned Company
-    if ((role == 'company' ||
-        role == 'agent' && customUserId == assignCompanyId.toString())) {
-      /*final isCompleted =
-      (shipment['delivery_date'] != null &&
-          shipment['delivery_date'].toString().isNotEmpty);*/
-      if (hasInvoice) {
-        return Wrap(
-          spacing: 8,
-          children: [
-            SizedBox(
-              //width: 130,
-              child: ElevatedButton.icon(
-                onPressed: state == PdfState.downloaded
-                    ? null
-                    : widget.onDownloadInvoice,
-                icon: const Icon(Icons.download),
-                label: Text(
-                  state == PdfState.downloaded ? "downloaded".tr() : "download".tr(),
-                ),
+        if (widget.isInvoiceRequested) {
+          return SizedBox(
+            child: ElevatedButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.check_circle_outline, color: Colors.grey),
+              label: Text("requested".tr()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade200,
               ),
             ),
-            IconButton(
-              onPressed:
-              state == PdfState.downloaded ? widget.onPreviewInvoice : null,
-              icon: const Icon(Icons.visibility),
-              tooltip: 'preview_pdf'.tr(),
-            ),
-            IconButton(
-              onPressed:
-              state == PdfState.downloaded ? widget.onShareInvoice : null,
-              icon: const Icon(Icons.share),
-              tooltip: 'share_invoice'.tr(),
-            ),
-            IconButton(
-              onPressed:
-              state == PdfState.downloaded ? widget.onDeleteInvoice : null,
-              icon: const Icon(Icons.delete),
-              tooltip: 'delete_pdf'.tr(),
-            ),
-          ],
-        );
-      } else /*if (isCompleted)*/ {
-        return SizedBox(
-          //width: 160,
-          child: ElevatedButton.icon(
-            onPressed: widget.onGenerateInvoice,
-            icon: const Icon(Icons.receipt),
-            label:  Text("generate_invoice".tr()),
-          ),
-        );
+          );
+        } else {
+          return SizedBox(
+            child: ElevatedButton.icon(
+                onPressed: widget.onRequestInvoice,
+                icon: const Icon(Icons.receipt_rounded),
+                label: Text("request_invoice".tr()),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade100,
+                    foregroundColor: Colors.orange.shade900)),
+          );
+        }
       }
     }
-
-    // Case 3: Not related
-    return const SizedBox();
+    if (role == 'driver' && customUserId == driverId) {
+      return Wrap(
+        spacing: 8,
+        children: [
+          SizedBox(
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Rating(
+                      shipmentId: shipmentId,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.star),
+              label: Text(
+                "rate".tr(),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    else {
+      return const SizedBox();
+    }
   }
 }
