@@ -115,16 +115,11 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         .eq('user_id', currentUserId)
         .maybeSingle();
 
-    if (mounted) {
-      setState(() {
-        authUserId = currentUserId;
-        customUserId = userProfile?['custom_user_id'];
-        role = userProfile?['role'];
-      });
-    }
-    print(
-      "Logged in as: authUserId=$authUserId, customUserId=$customUserId, role=$role",
-    );
+    setState(() {
+      customUserId = userProfile?['custom_user_id'];
+      role = userProfile?['role'];
+    });
+    print("Logged in as: customUserId=$customUserId, role=$role");
   }
 
   Future<Map<String, String?>> fetchCustomerNameAndMobile(
@@ -151,32 +146,28 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         .from('ratings')
         .select(
       'shipment_id, edit_count',
-    )
-        .eq('rater_id', Supabase.instance.client.auth.currentUser!.id);
-
+    );
     if (response.isNotEmpty) {
-      if (mounted) {
-        setState(() {
-          for (var row in response) {
-            ratingEditCount[row['shipment_id']] = row['edit_count'];
-          }
-        });
-      }
+      setState(() {
+        for (var row in response) {
+          ratingEditCount[row['shipment_id']] =
+          row['edit_count'];
+        }
+      });
     }
   }
 
   Future<void> loadCachedShipments() async {
     final cachedData = _prefs?.getString('shipments_cache');
     if (cachedData != null) {
-      if (mounted) {
-        setState(() {
-          shipments = List<Map<String, dynamic>>.from(jsonDecode(cachedData));
-          filteredShipments = shipments;
-          loading = false;
-        });
-      }
+      setState(() {
+        shipments = List<Map<String, dynamic>>.from(jsonDecode(cachedData));
+        filteredShipments = shipments;
+        loading = false;
+      });
     }
   }
+
 
   Future<void> saveShipmentToCache(List<Map<String, dynamic>> shipments) async {
     final prefs = await SharedPreferences.getInstance();
@@ -185,82 +176,58 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
   }
 
   Future<void> fetchShipments() async {
-    if (mounted) {
-      setState(() => loading = true);
+    setState(() => loading = true);
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    print('My current UID: $userId');
+
+    if (userId == null) {
+      setState(() {
+        loading = false;
+        shipments = [];
+        filteredShipments = [];
+      });
+      return;
     }
-    print('Fetching shipments for custom_user_id: $customUserId');
 
-    try {
-      if (customUserId == null) {
-        print("customUserId is null, cannot fetch shipments.");
-        if (mounted) {
-          setState(() {
-            shipments = [];
-            filteredShipments = [];
-          });
-        }
-        return;
-      }
+    // Fetch custom user ID
+    final res = await _supabaseService.getShipmentsForUser(userId);
+    print('Raw shipments response: $res');
 
-      final createdShipments = await Supabase.instance.client
-          .from('shipment')
-          .select()
-          .eq('shipper_id', customUserId!);
-
-      // Query 2: Shipments I was assigned to
-      final assignedShipments = await Supabase.instance.client
-          .from('shipment')
-          .select()
-          .eq('assigned_agent', customUserId!);
-      final allShipments = <String, Map<String, dynamic>>{};
-      for (var shipment in createdShipments) {
-        allShipments[shipment['shipment_id']] = shipment;
-      }
-      for (var shipment in assignedShipments) {
-        allShipments[shipment['shipment_id']] = shipment;
-      }
-
-      final res = allShipments.values.toList();
-
-      print('Raw shipments response: $res');
-      shipments = res.where((s) {
-        final status = s['booking_status']?.toString().toLowerCase();
-        return status == 'completed';
-      }).toList();
-      await _prefs?.setString('shipments_cache', jsonEncode(shipments));
-      await fetchEditCounts();
-      await checkPdfStates();
-      try {
-        final requestRes = await Supabase.instance.client
-            .from('invoice_requests')
-            .select('shipment_id')
-            .eq('requested_to', customUserId!);
-
-        _invoiceRequests =
-            requestRes.map((r) => r['shipment_id'].toString()).toSet();
-        print('Active invoice requests: $_invoiceRequests');
-      } catch (e) {
-        print('Error fetching invoice requests: $e');
-        _invoiceRequests = {};
-      }
-      applyFilters();
-    } catch (e) {
-      print("Error fetching shipments: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading trips: ${e.toString()}')),
-        );
-      }
+    setState(() {
+      loading = false;
       shipments = [];
       filteredShipments = [];
-    } finally {
-      if (mounted) {
-        setState(() {
-          loading = false;
-          _refreshController.refreshCompleted();
-        });
-      }
+    });
+
+    shipments = res.where((s) {
+      final status = s['booking_status']?.toString().toLowerCase();
+      print(status);
+      return status == 'completed';
+    }).toList();
+
+    print("Fetched shipments count: ${res.length}");
+    for (var s in res) {
+      print(
+        "Shipment ID: ${s['shipment_id']}, booking_status: '${s['booking_status']}'",
+      );
     }
+
+    print("Filtered completed shipments count: ${shipments.length}");
+    for (var s in shipments) {
+      print(
+        "Completed shipment ID: ${s['shipment_id']}, booking_status: '${s['booking_status']}'",
+      );
+    }
+
+    filteredShipments = shipments;
+    await _prefs?.setString('shipments_cache', jsonEncode(shipments));
+    await fetchEditCounts();
+    await checkPdfStates();
+
+    setState(() {
+      loading = false;
+      _refreshController.refreshCompleted();
+    });
   }
 
   void searchShipments(String query) {

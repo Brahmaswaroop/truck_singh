@@ -324,7 +324,12 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
         'uploaded_by_role': _userRole == UserRole.agent ? 'agent' : 'driver',
         'document_category': 'personal',
         'user_id': supabase.auth.currentUser?.id,
-      });
+        'rejection_reason': null,
+        'reviewed_at': null,
+        'reviewed_by': null,
+      },
+        onConflict: 'driver_custom_id, document_type',
+      );
 
       if (_userRole == UserRole.driver && driverId == _loggedInUserId) {
         // SCENARIO 1: Driver uploads
@@ -378,6 +383,7 @@ class _DriverDocumentsPageState extends State<DriverDocumentsPage>
       await _loadDriverDocuments();
     } catch (e) {
       _showErrorSnackBar('Error uploading document: ${e.toString()}');
+      print(e.toString());
     } finally {
       setState(() {
         _uploadingDriverId = null;

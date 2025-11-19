@@ -50,10 +50,6 @@ class _ManageUsersPageState extends State<ManageUsersPage>
       final role = (user['role'] ?? '').toLowerCase();
       if (role == 'admin') return false; // hide admin always
       if (_roleFilter == 'All') return true;
-      if (_roleFilter == 'driver') {
-        // combine both driver roles
-        return role == 'driver_individual' || role == 'driver_company';
-      }
 
       return role == _roleFilter.toLowerCase();
     }).toList();
@@ -488,8 +484,6 @@ class _ManageUsersPageState extends State<ManageUsersPage>
         return Colors.blue;
       case 'truckowner':
         return Colors.green;
-      case 'driver_individual':
-      case 'driver_company':
       case 'driver':
         return Colors.orange;
       case 'shipper':
