@@ -26,17 +26,27 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
         'get_shipments_shared_with_me',
       );
 
-      if (response != null && response is List) {
+      dynamic data;
+      if (response is PostgrestResponse) {
+        data = response.data;
+      } else {
+        data = response;
+      }
+
+      if (data != null && data is List) {
         final List<Map<String, dynamic>> allShipments =
-        List<Map<String, dynamic>>.from(response);
+        List<Map<String, dynamic>>.from(data);
+
         final now = DateTime.now();
         final filtered = allShipments.where((shipment) {
-          final status = shipment['booking_status']?.toString().toLowerCase();
+          final status =
+          shipment['booking_status']?.toString().toLowerCase();
           final completedAtStr =
               shipment['completed_at'] ?? shipment['updated_at'];
 
           if (status == 'completed' && completedAtStr != null) {
-            final completedAt = DateTime.tryParse(completedAtStr.toString());
+            final completedAt =
+            DateTime.tryParse(completedAtStr.toString());
             if (completedAt != null) {
               return now.difference(completedAt).inHours < 24;
             }
@@ -44,19 +54,26 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
           return true;
         }).toList();
 
-        setState(() {
-          _sharedShipments = filtered;
-        });
+        if (mounted) {
+          setState(() {
+            _sharedShipments = filtered;
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = "Could not fetch shared shipments: ${e.toString()}";
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+          "Could not fetch shared shipments: ${e.toString()}";
+        });
+      }
       print(_errorMessage);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -75,7 +92,8 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
 
     if (_errorMessage != null) {
       return Center(
-        child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
+        child:
+        Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
       );
     }
 
@@ -96,6 +114,7 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
         itemBuilder: (context, index) {
           final shipment = _sharedShipments[index];
           final sharerName = shipment['sharer_name'] ?? 'Someone';
+          final shipmentId = shipment['shipment_id']?.toString() ?? "Unknown";
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -105,7 +124,7 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
                 color: Colors.teal,
               ),
               title: Text(
-                shipment['shipment_id'] ?? 'Unknown ID',
+                shipmentId,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Text(
@@ -118,7 +137,7 @@ class _SharedShipmentsPageState extends State<SharedShipmentsPage> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => ShipmentTrackingPage(
-                      shipmentId: shipment['shipment_id'],
+                      shipmentId: shipmentId,
                     ),
                   ),
                 );

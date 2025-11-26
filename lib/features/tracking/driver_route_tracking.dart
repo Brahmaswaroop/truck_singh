@@ -8,7 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:logistics_toolkit/services/driver/routing_service.dart';
 
 class DriverRouteTrackingPage extends StatefulWidget {
-  final String driverId; // Pass current driver's custom_user_id
+  final String driverId;
+
   const DriverRouteTrackingPage({super.key, required this.driverId});
 
   @override
@@ -54,10 +55,11 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
       await _getCurrentLocation();
 
       if (_pickupLocation != null && _dropLocation != null) {
-        _calculateTargetAndFetchRoutes();
+        await _calculateTargetAndFetchRoutes();
         _startLiveTracking();
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorMessage = "Error initializing: $e";
@@ -75,9 +77,9 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
         .neq('booking_status', 'Completed')
         .maybeSingle();
 
-    if (response == null) {
-      throw "No active shipment found for this driver.";
-    }
+    if (response == null) throw "No active shipment found for this driver.";
+
+    if (!mounted) return;
 
     setState(() {
       _shipmentStatus = response['booking_status'];
@@ -93,29 +95,34 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
   }
 
   Future<void> _getCurrentLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
+    bool enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
       _showErrorSnackBar("Enable location services!");
-      throw "Location services are disabled.";
+      throw "Location services disabled";
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
+
       if (permission == LocationPermission.denied) {
         _showErrorSnackBar("Location permission denied!");
-        throw "Location permission denied.";
+        throw "Permission denied";
       }
     }
 
     Position pos = await Geolocator.getCurrentPosition();
+
+    if (!mounted) return;
+
     setState(() {
       _currentDriverPos = LatLng(pos.latitude, pos.longitude);
     });
   }
 
-  void _calculateTargetAndFetchRoutes() async {
+  Future<void> _calculateTargetAndFetchRoutes() async {
     LatLng target;
+
     if (_shipmentStatus == "Assigned" || _shipmentStatus == "Accepted") {
       target = _pickupLocation!;
       _targetLabel = "To Pickup";
@@ -130,41 +137,47 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
         target,
       );
 
-      if (mounted) {
-        setState(() {
-          _routeOptions = routes;
-          _isLoading = false;
-          if (routes.isNotEmpty) {
-            _updateStatsFromRouteOption(_routeOptions[0]);
-          }
-        });
-      }
+      if (!mounted) return;
+
+      setState(() {
+        _routeOptions = routes;
+        _isLoading = false;
+
+        if (routes.isNotEmpty) {
+          _updateStatsFromRouteOption(routes[0]);
+        }
+      });
     }
   }
 
   void _startLiveTracking() {
-    const locationSettings = LocationSettings(
+    const settings = LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
     );
+
     _positionStream =
-        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+        Geolocator.getPositionStream(locationSettings: settings).listen(
               (Position pos) {
             LatLng newPos = LatLng(pos.latitude, pos.longitude);
+
+            if (!mounted) return;
+
             setState(() {
               _currentDriverPos = newPos;
             });
+
             _mapController?.animateCamera(CameraUpdate.newLatLng(newPos));
           },
         );
   }
 
   void _updateStatsFromRouteOption(RouteOption route) {
-    double distanceKm = route.distanceMeters / 1000.0;
+    double km = route.distanceMeters / 1000.0;
     double fuel = route.fuelCost;
 
     setState(() {
-      _distanceRemainingKm = distanceKm;
+      _distanceRemainingKm = km;
       _fuelCostRemaining = fuel;
     });
   }
@@ -172,78 +185,75 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
   void _showFuelDisclaimerDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("⛽ Fuel Cost Estimation"),
-          content: Text(
-            "The remaining fuel cost is an **ESTIMATE** based on the following constants:\n\n"
-                "• Truck Mileage: **${_routeService.truckKPL.toStringAsFixed(1)} km per Liter (KPL)**\n"
-                "• Fuel Price: **₹${_routeService.fuelPricePerLiter.toStringAsFixed(2)} per Liter**\n\n"
-                "This figure does not account for actual traffic, load weight, driver behavior, or real-time fuel price fluctuations. It is for **planning purposes only**.",
+      builder: (context) => AlertDialog(
+        title: const Text("⛽ Fuel Cost Estimation"),
+        content: Text(
+          "Fuel cost is an estimate:\n\n"
+              "• Mileage: ${_routeService.truckKPL.toStringAsFixed(1)} km/l\n"
+              "• Fuel Price: ₹${_routeService.fuelPricePerLiter.toStringAsFixed(2)}\n",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text("OK"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 
   Set<Polyline> _createPolylines() {
-    Set<Polyline> polylines = {};
+    Set<Polyline> set = {};
+
     for (int i = 0; i < _routeOptions.length; i++) {
-      bool isSelected = (i == _selectedRouteIndex);
-      polylines.add(
+      bool selected = i == _selectedRouteIndex;
+
+      set.add(
         Polyline(
           polylineId: PolylineId("route_$i"),
           points: _decodePoly(_routeOptions[i].polylineEncoded),
-          color: isSelected ? Colors.blue : Colors.grey,
-          width: isSelected ? 6 : 4,
-          zIndex: isSelected ? 10 : 0,
+          color: selected ? Colors.blue : Colors.grey,
+          width: selected ? 6 : 4,
+          zIndex: selected ? 10 : 1,
           onTap: () {
+            if (!mounted) return;
             setState(() {
               _selectedRouteIndex = i;
-              // FIX: Update stats immediately on route selection
               _updateStatsFromRouteOption(_routeOptions[i]);
             });
           },
         ),
       );
     }
-    return polylines;
+
+    return set;
   }
 
   Set<Marker> _createMarkers() {
     Set<Marker> markers = {};
+
     if (_currentDriverPos != null) {
       markers.add(
         Marker(
           markerId: const MarkerId("driver"),
           position: _currentDriverPos!,
           infoWindow: const InfoWindow(title: "You (Driver)"),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueAzure,
-          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         ),
       );
     }
+
     if (_pickupLocation != null) {
       markers.add(
         Marker(
           markerId: const MarkerId("pickup"),
           position: _pickupLocation!,
           infoWindow: const InfoWindow(title: "Pickup"),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
       );
     }
+
     if (_dropLocation != null) {
       markers.add(
         Marker(
@@ -254,21 +264,30 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
         ),
       );
     }
+
     return markers;
   }
 
+  // ✅ FINAL FIX — Works with your flutter_polyline_points version
   List<LatLng> _decodePoly(String encoded) {
-    return PolylinePoints.decodePolyline(
-      encoded,
-    ).map((p) => LatLng(p.latitude, p.longitude)).toList();
+    // Required in your installed version
+    PolylinePoints(apiKey: "YOUR_GOOGLE_API_KEY_HERE");
+
+    // decodePolyline is STATIC — must be called via class
+    final List<PointLatLng> points = PolylinePoints.decodePolyline(encoded);
+
+    return points.map((p) => LatLng(p.latitude, p.longitude)).toList();
   }
 
   void _showErrorSnackBar(String msg) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.redAccent),
-      );
-    }
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
   }
 
   @override
@@ -276,16 +295,17 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
     if (_errorMessage.isNotEmpty) {
       return Scaffold(
         body: Center(
-          child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+          child: Text(
+            _errorMessage,
+            style: const TextStyle(color: Colors.red),
+          ),
         ),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _isLoading ? "Loading shipment..." : "Driver Route Tracking",
-        ),
+        title: Text(_isLoading ? "Loading..." : "Driver Route Tracking"),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -306,9 +326,11 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
             polylines: _createPolylines(),
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
-            padding: const EdgeInsets.only(bottom: 120.0),
+            padding: const EdgeInsets.only(bottom: 120),
             onMapCreated: (controller) => _mapController = controller,
           ),
+
+          /// Route Options Chips
           if (_routeOptions.isNotEmpty)
             Positioned(
               top: 10,
@@ -317,26 +339,33 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: _routeOptions.asMap().entries.map((entry) {
-                    bool isSelected = entry.key == _selectedRouteIndex;
+                  children:
+                  _routeOptions.asMap().entries.map((entry) {
+                    int index = entry.key;
+                    bool selected =
+                        index == _selectedRouteIndex;
+
                     return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
+                      padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
-                        backgroundColor: isSelected
-                            ? Colors.indigo
-                            : Colors.white,
+                        backgroundColor:
+                        selected ? Colors.indigo : Colors.white,
                         label: Text(
-                          "${entry.value.durationFormatted} • ${(entry.value.distanceMeters / 1000).toStringAsFixed(1)}km",
+                          "${entry.value.durationFormatted} • ${(entry.value.distanceMeters / 1000).toStringAsFixed(1)} km",
                           style: TextStyle(
-                            color: isSelected
+                            color: selected
                                 ? Colors.white
                                 : Colors.black,
                           ),
                         ),
-                        onPressed: () => setState(() {
-                          _selectedRouteIndex = entry.key;
-                          _updateStatsFromRouteOption(entry.value);
-                        }),
+                        onPressed: () {
+                          if (!mounted) return;
+                          setState(() {
+                            _selectedRouteIndex = index;
+                            _updateStatsFromRouteOption(
+                                entry.value);
+                          });
+                        },
                       ),
                     );
                   }).toList(),
@@ -344,6 +373,7 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
               ),
             ),
 
+          /// Info Panel
           Positioned(
             bottom: 20,
             left: 20,
@@ -351,23 +381,22 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
             child: Card(
               elevation: 8,
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _infoCol(
-                          "Remaining",
-                          "${_distanceRemainingKm.toStringAsFixed(1)} km",
-                        ),
-                        _infoCol(
-                          "Fuel Cost",
-                          "₹${_fuelCostRemaining.toStringAsFixed(2)}",
-                        ),
-                        _infoCol("Status", _shipmentStatus ?? "-"),
-                      ],
+                    _infoCol(
+                      "Remaining",
+                      "${_distanceRemainingKm.toStringAsFixed(1)} km",
+                    ),
+                    _infoCol(
+                      "Fuel Cost",
+                      "₹${_fuelCostRemaining.toStringAsFixed(2)}",
+                    ),
+                    _infoCol(
+                      "Status",
+                      _shipmentStatus ?? "-",
                     ),
                   ],
                 ),
@@ -380,44 +409,40 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
             child: ElevatedButton(
               child: const Icon(Icons.zoom_out_map),
               onPressed: () {
-                if (!_isLoading &&
-                    _currentDriverPos != null &&
+                if (_currentDriverPos != null &&
                     _pickupLocation != null &&
                     _dropLocation != null) {
                   LatLngBounds bounds = LatLngBounds(
                     southwest: LatLng(
                       min(
                         min(
-                          _pickupLocation!.latitude,
-                          _dropLocation!.latitude,
-                        ),
+                            _pickupLocation!.latitude,
+                            _dropLocation!.latitude),
                         _currentDriverPos!.latitude,
                       ),
                       min(
                         min(
-                          _pickupLocation!.longitude,
-                          _dropLocation!.longitude,
-                        ),
+                            _pickupLocation!.longitude,
+                            _dropLocation!.longitude),
                         _currentDriverPos!.longitude,
                       ),
                     ),
                     northeast: LatLng(
                       max(
                         max(
-                          _pickupLocation!.latitude,
-                          _dropLocation!.latitude,
-                        ),
+                            _pickupLocation!.latitude,
+                            _dropLocation!.latitude),
                         _currentDriverPos!.latitude,
                       ),
                       max(
                         max(
-                          _pickupLocation!.longitude,
-                          _dropLocation!.longitude,
-                        ),
+                            _pickupLocation!.longitude,
+                            _dropLocation!.longitude),
                         _currentDriverPos!.longitude,
                       ),
                     ),
                   );
+
                   _mapController?.animateCamera(
                     CameraUpdate.newLatLngBounds(bounds, 60),
                   );
@@ -433,10 +458,15 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
   Widget _infoCol(String label, String value) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Text(label,
+            style:
+            const TextStyle(color: Colors.grey, fontSize: 12)),
         Text(
           value,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ],
     );

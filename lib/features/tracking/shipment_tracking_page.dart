@@ -31,7 +31,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
   String? _driverId;
   BitmapDescriptor? _truckIcon;
 
-  double _heading = 0.0; // Default heading
+  double _heading = 0.0;
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _bluePolylines = {};
@@ -61,7 +61,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     final ByteData data = await rootBundle.load('assets/cargo-truck.png');
     final codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
-      targetWidth: 128, // Uber/Google Maps style size
+      targetWidth: 128,
     );
     final frame = await codec.getNextFrame();
     final resized = await frame.image.toByteData(
@@ -75,7 +75,6 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     setState(() => _isLoading = true);
 
     try {
-      // Fetch shipment & driver data from Supabase
       final data = await supabase
           .rpc('get_track_data', params: {'p_shipment_id': widget.shipmentId})
           .single();
@@ -93,24 +92,21 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
           (pickupLng as num).toDouble(),
         );
       }
+
       if (dropLat != null && dropLng != null) {
         _dropLocation = LatLng(
           (dropLat as num).toDouble(),
           (dropLng as num).toDouble(),
         );
       }
-      if (mounted)
-        setState(() {
-          _setMarkers();
-        });
+
+      if (mounted) _setMarkers();
 
       await _drawRoute();
       await _fetchTruckLocation();
 
-      // Setup real-time subscription
       if (_driverId != null) _setupRealtimeSubscription();
 
-      // Zoom to fit markers
       if (_mapController != null) _zoomToFitMarkers();
     } catch (e) {
       _errorMessage = "Failed to fetch data: $e";
@@ -148,17 +144,15 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     return nearestPoint;
   }
 
-  // Simple Haversine distance (km)
   double _calculateDistance(LatLng p1, LatLng p2) {
-    const R = 6371e3; // Earth radius in meters
+    const R = 6371e3;
     final lat1 = p1.latitude * pi / 180;
     final lat2 = p2.latitude * pi / 180;
     final dLat = (p2.latitude - p1.latitude) * pi / 180;
     final dLng = (p2.longitude - p1.longitude) * pi / 180;
 
-    final a =
-        sin(dLat / 2) * sin(dLat / 2) +
-            cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
 
     return R * c;
@@ -166,6 +160,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
 
   Future<void> _fetchTruckLocation() async {
     if (_driverId == null) return;
+
     try {
       final driverData = await supabase
           .from('driver_locations')
@@ -180,15 +175,11 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
           (driverData['last_latitude'] as num).toDouble(),
           (driverData['last_longitude'] as num).toDouble(),
         );
-        _lastUpdated = DateTime.tryParse(driverData['updated_at'] ?? '');
 
+        _lastUpdated = DateTime.tryParse(driverData['updated_at'] ?? '');
         _heading = (driverData['heading'] as num?)?.toDouble() ?? _heading;
 
-
-        if (mounted)
-          setState(() {
-            _updateMarkers();
-          });
+        if (mounted) _updateMarkers();
       }
     } catch (e) {
       print('Error fetching driver location: $e');
@@ -197,6 +188,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
 
   void _setupRealtimeSubscription() {
     if (_driverId == null) return;
+
     _realtimeChannel = supabase.channel(
       'public:driver_locations:custom_user_id=eq.$_driverId',
     );
@@ -206,19 +198,11 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
       event: PostgresChangeEvent.update,
       schema: 'public',
       table: 'driver_locations',
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'custom_user_id',
-        value: _driverId,
-      ),
       callback: (payload) {
-        final lat = (payload.newRecord['last_latitude'] as num?)
-            ?.toDouble();
-        final lng = (payload.newRecord['last_longitude'] as num?)
-            ?.toDouble();
+        final lat = (payload.newRecord['last_latitude'] as num?)?.toDouble();
+        final lng = (payload.newRecord['last_longitude'] as num?)?.toDouble();
         final updatedAt = payload.newRecord['updated_at'];
 
-        // 👇 Read heading from table (if available)
         _heading =
             (payload.newRecord['heading'] as num?)?.toDouble() ?? _heading;
 
@@ -242,38 +226,38 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
 
   void _setMarkers() {
     _markers.clear();
+
     if (_pickupLocation != null) {
       _markers.add(
         Marker(
           markerId: const MarkerId("pickup"),
           position: _pickupLocation!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           infoWindow: const InfoWindow(title: "Pickup"),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
-          ),
         ),
       );
     }
+
     if (_dropLocation != null) {
       _markers.add(
         Marker(
           markerId: const MarkerId("drop"),
           position: _dropLocation!,
-          infoWindow: const InfoWindow(title: "Drop"),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: "Drop"),
         ),
       );
     }
+
     if (_truckLocation != null && _truckIcon != null) {
       _markers.add(
         Marker(
           markerId: MarkerId(_driverId!),
           position: _truckLocation!,
           icon: _truckIcon!,
-          anchor: const Offset(0.5, 0.5),
+          rotation: _heading,
           flat: true,
-          rotation: _heading, // pass live heading
-          zIndex: 2,
+          anchor: const Offset(0.5, 0.5),
         ),
       );
     }
@@ -287,10 +271,9 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
       final nearest = _findNearestPointOnRoute(_truckLocation!, routePoints);
 
       if (nearest != null) {
-        // Use PolylinePoints to get route from truck to nearest point
-        final polylinePoints = PolylinePoints(
-          apiKey: AppConfig.googleMapsApiKey,
-        );
+        final polylinePoints =
+        PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
+
         final result = await polylinePoints.getRouteBetweenCoordinates(
           request: PolylineRequest(
             origin: PointLatLng(
@@ -303,15 +286,12 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
         );
 
         if (result.points.isNotEmpty && mounted) {
-          final points = result.points
-              .map((p) => LatLng(p.latitude, p.longitude))
-              .toList();
+          final points =
+          result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
 
           setState(() {
-            // Remove old deviation line
             _bluePolylines.removeWhere(
-                  (p) => p.polylineId.value == "deviation_red",
-            );
+                    (p) => p.polylineId.value == "deviation_red");
 
             _bluePolylines.add(
               Polyline(
@@ -323,15 +303,12 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
               ),
             );
 
-            // Marker at rejoin point
             _markers.add(
               Marker(
                 markerId: const MarkerId("rejoin_point"),
                 position: nearest,
                 icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueOrange,
-                ),
-                infoWindow: const InfoWindow(title: "Rejoin Route"),
+                    BitmapDescriptor.hueOrange),
               ),
             );
           });
@@ -344,6 +321,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     if (_pickupLocation == null || _dropLocation == null) return;
 
     final polylinePoints = PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
+
     final result = await polylinePoints.getRouteBetweenCoordinates(
       request: PolylineRequest(
         origin: PointLatLng(
@@ -359,10 +337,10 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     );
 
     if (result.points.isNotEmpty) {
-      final points = result.points
-          .map((p) => LatLng(p.latitude, p.longitude))
-          .toList();
-      if (mounted)
+      final points =
+      result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+
+      if (mounted) {
         setState(() {
           _bluePolylines.clear();
           _bluePolylines.add(
@@ -374,11 +352,13 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
             ),
           );
         });
+      }
     }
   }
 
   void _zoomToFitMarkers() {
     if (_markers.isEmpty || _mapController == null) return;
+
     LatLngBounds bounds = LatLngBounds(
       southwest: LatLng(
         _markers.map((m) => m.position.latitude).reduce(min),
@@ -429,6 +409,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
               if (_followTruck) _followTruck = false;
             },
           ),
+
           if (_lastUpdated != null)
             Positioned(
               left: 16,
@@ -446,6 +427,7 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
             ),
 
           if (_isLoading) const Center(child: CircularProgressIndicator()),
+
           if (!_isLoading && _errorMessage != null)
             Center(
               child: Card(
@@ -484,4 +466,3 @@ class _ShipmentTrackingPageState extends State<ShipmentTrackingPage> {
     );
   }
 }
-

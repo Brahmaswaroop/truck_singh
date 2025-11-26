@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:logistics_toolkit/config/theme.dart';
-import 'package:pull_to_refresh/pull_to_refresh.dart' as ptr;
+import '../notifications/notification_service.dart';
 
 enum UserRole { agent, truckOwner, driver }
 
@@ -27,13 +27,11 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
   String? _loggedInUserId;
   UserRole? _userRole;
   late AnimationController _animationController;
+  String _selectedStatusFilter = 'All';
+  final List<String> _statusFilters = ['All', 'Uploaded', 'Verified'];
+  String? _loggedInUserName;
 
-  String _selectedStatusFilter = 'all';
-  final List<String> _statusFilters = ['all', 'uploaded', 'verified'];
-
-  final ptr.RefreshController _refreshController =
-  ptr.RefreshController(initialRefresh: false);
-
+  // Vehicle documents that can be uploaded for trucks
   final Map<String, Map<String, dynamic>> _vehicleDocuments = {
     'Vehicle Registration': {
       'icon': Icons.description,
@@ -90,11 +88,12 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
       final profile = await supabase
           .from('user_profiles')
-          .select('custom_user_id, role')
+          .select('custom_user_id, role, name')
           .eq('user_id', userId)
           .single();
 
       _loggedInUserId = profile['custom_user_id'];
+      _loggedInUserName = profile['name'];
       final userType = profile['role'];
 
       print('User profile fetched: $profile');
@@ -110,6 +109,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       print('Detected role for user $_loggedInUserId: $_userRole');
     } catch (e) {
       print('Error detecting user role: $e');
+
       if (_loggedInUserId?.startsWith('TRUK') == true) {
         _userRole = UserRole.truckOwner;
       } else if (_loggedInUserId?.startsWith('DRV') == true) {
@@ -117,6 +117,32 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       } else {
         _userRole = UserRole.driver;
       }
+    }
+  }
+
+  Future<List<String>> _getDriversForTruck(String truckNumber) async {
+    try {
+      final response = await supabase
+          .from('shipment')
+          .select('assigned_driver')
+          .eq('assigned_truck', truckNumber)
+          .not('booking_status', 'in', '("Completed", "cancelled")');
+
+      if (response.isEmpty) {
+        return [];
+      }
+
+      final driverIds = <String>{};
+      for (var row in response) {
+        if (row['assigned_driver'] != null) {
+          driverIds.add(row['assigned_driver'] as String);
+        }
+      }
+
+      return driverIds.toList();
+    } catch (e) {
+      print('Error finding drivers for truck $truckNumber: $e');
+      return [];
     }
   }
 
@@ -129,12 +155,11 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
     try {
       List<Map<String, dynamic>> trucks = [];
+
       if (_userRole == UserRole.agent || _userRole == UserRole.truckOwner) {
         trucks = await supabase
             .from('trucks')
-            .select(
-          'id, truck_number, truck_admin, make, model, year, vehicle_type',
-        )
+            .select('id, truck_number, truck_admin, make, model, year, vehicle_type')
             .eq('truck_admin', _loggedInUserId!)
             .order('truck_number');
         print('Raw trucks data from database: $trucks');
@@ -155,9 +180,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           if (truckNumbers.isNotEmpty) {
             trucks = await supabase
                 .from('trucks')
-                .select(
-              'id, truck_number, truck_admin, make, model, year, vehicle_type',
-            )
+                .select('id, truck_number, truck_admin, make, model, year, vehicle_type')
                 .inFilter('truck_number', truckNumbers)
                 .order('truck_number');
           }
@@ -175,6 +198,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         });
         return;
       }
+
       final truckIds = trucks.map((truck) {
         final id = truck['id'];
         return id is int ? id : int.parse(id.toString());
@@ -189,6 +213,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           .eq('is_active', true);
 
       print('Found truck documents: ${uploadedDocs.length} - $uploadedDocs');
+
       final trucksWithDocuments = trucks
           .map((truck) {
         final truckIdValue = truck['id'];
@@ -268,38 +293,34 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         _applyStatusFilter();
         _isLoading = false;
       });
-      _refreshController.refreshCompleted();
     } catch (e) {
       print('Error loading truck documents: $e');
       setState(() {
         _isLoading = false;
       });
-      _refreshController.refreshFailed();
       _showErrorSnackBar('Error loading documents: ${e.toString()}');
     }
   }
 
   void _applyStatusFilter() {
-    if (_selectedStatusFilter.trim().toLowerCase() == 'all') {
+    if (_selectedStatusFilter == 'All') {
       _filteredTrucks = List.from(_trucks);
-      return;
+    } else {
+      _filteredTrucks = _trucks.where((truck) {
+        final docs = truck['documents'] as Map<String, Map<String, dynamic>>;
+        return docs.values.any((doc) => doc['status'] == _selectedStatusFilter);
+      }).toList();
     }
-    _filteredTrucks = _trucks.where((truck) {
-      final docs = truck['documents'] as Map<String, Map<String, dynamic>>;
-      return docs.values.any((doc) {
-        final docStatus = doc['status'].toString().trim().toLowerCase();
-        final filterStatus = _selectedStatusFilter.trim().toLowerCase();
-        return docStatus.contains(filterStatus);
-      });
-    }).toList();
   }
 
-
   Future<void> _uploadDocument(String truckNumber, String docType) async {
+    // Check permissions - only agents and truck owners can upload
     if (_userRole == UserRole.driver) {
       _showErrorSnackBar('drivers_cannot_upload_truck_documents'.tr());
       return;
     }
+
+    // Find the truck and get its ID
     final truck = _trucks.firstWhere(
           (t) => t['truck_number'] == truckNumber,
       orElse: () => {},
@@ -309,13 +330,19 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       _showErrorSnackBar('truck_not_found'.tr());
       return;
     }
+
+    // Debug print to check truck data structure
     print('Truck data for upload: $truck');
+
+    // Check if truck owner is uploading for their own truck
     if (_userRole == UserRole.truckOwner) {
       if (truck['truck_admin'] != _loggedInUserId) {
         _showErrorSnackBar('you_can_only_upload_own_trucks'.tr());
         return;
       }
     }
+
+    // Get truck ID - if not available in truck data, query it from database
     int truckId;
     final truckIdValue = truck['id'];
 
@@ -324,6 +351,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           ? truckIdValue
           : int.parse(truckIdValue.toString());
     } else {
+      // Fallback: Query truck ID using truck_number
       print('Truck ID not found in local data, querying from database...');
       try {
         final truckData = await supabase
@@ -357,6 +385,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       final fileName =
           '${truckNumber}_${docType.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
       final filePath = 'truck_documents/$fileName';
+
+      // Delete existing document if it exists
       try {
         final existingDocs = await supabase
             .from('truck_documents_old')
@@ -376,6 +406,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
                 .from('truck-documents')
                 .remove(filesToDelete);
           }
+
+          // Mark old documents as inactive
           await supabase
               .from('truck_documents_old')
               .update({'is_active': false})
@@ -385,7 +417,11 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       } catch (e) {
         print('Error deleting existing file: $e');
       }
+
+      // Upload new file
       await supabase.storage.from('truck-documents').upload(filePath, file);
+
+      // Save document record
       final insertData = {
         'truck_id': truckId,
         'user_id': supabase.auth.currentUser!.id,
@@ -398,6 +434,34 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       };
 
       await supabase.from('truck_documents_old').insert(insertData);
+      if (_loggedInUserId != null) {
+        final uploaderName = _loggedInUserName ?? _loggedInUserId!;
+        NotificationService.sendPushNotificationToUser(
+          recipientId: _loggedInUserId!,
+          title: 'Document Uploaded'.tr(),
+          message:
+          'You have successfully uploaded $docType for truck $truckNumber.'
+              .tr(),
+          data: {
+            'type': 'truck_document_upload',
+            'truck_number': truckNumber,
+          },
+        );
+        final driverIds = await _getDriversForTruck(truckNumber);
+        for (final driverId in driverIds) {
+          NotificationService.sendPushNotificationToUser(
+            recipientId: driverId,
+            title: 'Truck Document Updated'.tr(),
+            message:
+            '$uploaderName has uploaded a new document ($docType) for your assigned truck $truckNumber.'
+                .tr(),
+            data: {
+              'type': 'truck_document_update',
+              'truck_number': truckNumber,
+            },
+          );
+        }
+      }
 
       _showSuccessSnackBar('Document uploaded successfully');
       await _loadTruckDocuments();
@@ -472,7 +536,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
                   roleText,
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                 ),
-                backgroundColor: AppColors.teal.withOpacity(0.8),
+                // withOpacity() deprecated → use withValues() on latest Flutter
+                backgroundColor: AppColors.teal.withValues(alpha: 0.8),
               ),
             ),
         ],
@@ -481,37 +546,40 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
+          // Status Filter
           Container(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
                 Text(
                   'filter'.tr(),
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Expanded(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children: _statusFilters.map((statusKey) {
+                      children: _statusFilters.map((status) {
                         final isSelected =
-                            _selectedStatusFilter == statusKey;
+                            _selectedStatusFilter == status;
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(
-                            label: Text(statusKey.tr()),
+                            label: Text(status),
                             selected: isSelected,
                             onSelected: (selected) {
                               setState(() {
-                                _selectedStatusFilter = statusKey;
+                                _selectedStatusFilter = status;
                                 _applyStatusFilter();
                               });
                             },
-                            backgroundColor:
-                            isSelected ? AppColors.teal : null,
+                            backgroundColor: isSelected
+                                ? AppColors.teal
+                                : null,
                             selectedColor: AppColors.teal,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : null,
+                              color:
+                              isSelected ? Colors.white : null,
                             ),
                           ),
                         );
@@ -522,61 +590,48 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
               ],
             ),
           ),
+          // Trucks List
           Expanded(
-            child: ptr.SmartRefresher(
-              controller: _refreshController,
-              onRefresh: _loadTruckDocuments,
-              enablePullDown: true,
-              enablePullUp: false,
-              header: const ptr.WaterDropHeader(),
-              child: _filteredTrucks.isEmpty
-                  ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
+            child: _filteredTrucks.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 200),
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.local_shipping_outlined,
-                          size: 64,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _userRole == UserRole.driver
-                              ? 'no_trucks_driver'.tr()
-                              : 'no_trucks_other'.tr(),
-                          style: const TextStyle(fontSize: 16),
-                          textAlign: TextAlign.center,
-                        ),
-                        if (_userRole == UserRole.driver)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              'driver_hint'.tr(),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                      ],
-                    ),
+                  Icon(
+                    Icons.local_shipping_outlined,
+                    size: 64,
+                    color: Colors.grey[400],
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _userRole == UserRole.driver
+                        ? 'no_trucks_driver'.tr()
+                        : 'no_trucks_other'.tr(),
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_userRole == UserRole.driver)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'driver_hint'.tr(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                 ],
-              )
-                  : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredTrucks.length,
-                physics: const AlwaysScrollableScrollPhysics(),
-                itemBuilder: (context, index) {
-                  final truck = _filteredTrucks[index];
-                  return _buildTruckCard(truck);
-                },
               ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _filteredTrucks.length,
+              itemBuilder: (context, index) {
+                final truck = _filteredTrucks[index];
+                return _buildTruckCard(truck);
+              },
             ),
           ),
         ],
@@ -589,7 +644,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
     final truckType = truck['truck_type'] as String;
     final model = truck['model'] as String;
     final year = truck['year'] as String;
-    final documents = truck['documents'] as Map<String, Map<String, dynamic>>;
+    final documents =
+    truck['documents'] as Map<String, Map<String, dynamic>>;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -686,7 +742,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
                 ),
                 Text(
                   docConfig['description'],
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  style:
+                  TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -697,7 +754,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
+                        // withOpacity() deprecated → use withValues()
+                        color: statusColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: statusColor),
                       ),
@@ -727,7 +785,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
               truckNumber,
               docType,
               status,
-              fileUrl,
+              fileUrl as String?,
               canUpload,
             ),
         ],
@@ -744,6 +802,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       ) {
     List<Widget> actionButtons = [];
 
+    // Upload button for not uploaded documents
     if (status == 'Not Uploaded' && canUpload) {
       actionButtons.add(
         SizedBox(
@@ -753,7 +812,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.teal,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               textStyle: const TextStyle(fontSize: 10),
               minimumSize: const Size(60, 32),
             ),
@@ -763,6 +823,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       );
     }
 
+    // View button for uploaded documents
     if (status != 'Not Uploaded' && fileUrl != null) {
       actionButtons.add(
         IconButton(
@@ -804,6 +865,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         ),
       );
     }
+
     if (status == 'uploaded' && _userRole == UserRole.agent) {
       actionButtons.add(
         IconButton(
@@ -817,6 +879,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         ),
       );
     }
+
     if (status == 'Not Uploaded' && !canUpload) {
       String disabledText = 'Cannot Upload';
       if (_userRole == UserRole.driver) {
@@ -826,7 +889,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       actionButtons.add(
         Container(
           height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.grey.shade200,
             borderRadius: BorderRadius.circular(4),
@@ -838,6 +902,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         ),
       );
     }
+
     return Wrap(spacing: 4, children: actionButtons);
   }
 }

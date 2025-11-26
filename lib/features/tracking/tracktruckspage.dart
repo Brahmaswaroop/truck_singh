@@ -33,6 +33,7 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
   Future<void> _initialize() async {
     await _loadTruckIcon();
     await _fetchInitialLocations();
+
     if (_driverIds.isNotEmpty) {
       _setupRealtimeSubscription();
     }
@@ -60,6 +61,7 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
 
   Future<void> _fetchInitialLocations() async {
     if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -77,9 +79,13 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
 
       if (response.length >= _fetchLimit) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Warning: The number of fetched locations reached the maximum limit of $_fetchLimit. Some trucks may not be displayed.')),
+          SnackBar(
+            content: Text(
+              'Warning: Fetched $_fetchLimit drivers (max limit). Some trucks may not display.',
+            ),
+          ),
         );
-      }else{
+      } else {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
       }
 
@@ -89,22 +95,21 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
         setState(() => _errorMessage = "Failed to fetch truck locations: $e");
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   void _setupRealtimeSubscription() {
-    _realtimeChannel = supabase.channel('public:driver_locations');
-    _realtimeChannel!
-        .onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'driver_locations',
-      callback: (payload) {
-        _handleRealtimeUpdate(payload);
-      },
-    )
-        .subscribe();
+    _realtimeChannel = supabase.channel('public:driver_locations')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'driver_locations',
+        callback: (payload) => _handleRealtimeUpdate(payload),
+      )
+      ..subscribe();
   }
 
   void _handleRealtimeUpdate(PostgresChangePayload payload) {
@@ -136,9 +141,8 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
   Future<void> _navigateToShipmentDetails(String driverId) async {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Fetching shipment details...')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Fetching shipment details...')));
 
     try {
       final response = await supabase
@@ -155,12 +159,11 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
       if (!mounted) return;
 
       if (response != null) {
-        final shipment = response;
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ShipmentDetailsPage(
-              shipment: shipment,
+              shipment: response,
               isHistoryPage: false,
             ),
           ),
@@ -175,6 +178,7 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -191,47 +195,35 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
 
     final selectedValue = await showDialog<int?>(
       context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setStateInDialog) {
-            return AlertDialog(
-              title: const Text('Driver Display Limit'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: limits.map((limit) {
-                    return RadioListTile<int?>(
-                      title: Text(limit.toString()),
-                      value: limit,
-                      groupValue: _fetchLimit,
-                      onChanged: (value) {
-                        Navigator.of(context).pop(value);
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('Cancel'),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            );
-          },
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Driver Display Limit'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: limits.map((limit) {
+              return RadioListTile<int?>(
+                title: Text(limit.toString()),
+                value: limit,
+                groupValue: _fetchLimit,
+                onChanged: (value) => Navigator.of(context).pop(value),
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            )
+          ],
         );
       },
     );
+
     if (selectedValue != null && selectedValue != _fetchLimit) {
-      setState(() {
-        _fetchLimit = selectedValue;
-      });
+      setState(() => _fetchLimit = selectedValue);
       await _fetchInitialLocations();
     }
   }
-
 
   Marker? _createMarkerFromData(Map<String, dynamic> item) {
     final lat = item['location_lat'];
@@ -242,6 +234,7 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
     if (lat == null || lng == null || customUserId == null) return null;
 
     bool isStale = false;
+
     if (lastUpdatedAt != null) {
       final lastUpdate = DateTime.tryParse(lastUpdatedAt) ?? DateTime.now();
       isStale = DateTime.now().difference(lastUpdate).inMinutes > 15;
@@ -254,24 +247,27 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
       alpha: isStale ? 0.6 : 1.0,
       infoWindow: InfoWindow(
         title: "Driver $customUserId",
-        snippet: "Updated: ${_formatTimestamp(lastUpdatedAt)}\nTap for shipment details",
-        onTap: () {
-          _navigateToShipmentDetails(customUserId);
-        },
+        snippet:
+        "Updated: ${_formatTimestamp(lastUpdatedAt)}\nTap for shipment details",
+        onTap: () => _navigateToShipmentDetails(customUserId),
       ),
     );
   }
 
   void _updateMarkersFromData(List<dynamic> data) {
     if (!mounted) return;
-    Map<String, Marker> tempMarkers = {};
+
+    final tempMarkers = <String, Marker>{};
+
     for (var item in data) {
       final marker = _createMarkerFromData(item);
       if (marker != null) {
         tempMarkers[marker.markerId.value] = marker;
       }
     }
+
     setState(() => _markers = tempMarkers);
+
     _zoomToFitMarkers();
   }
 
@@ -296,10 +292,10 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
       return;
     }
 
-    double south = positions.first.latitude,
-        north = positions.first.latitude,
-        west = positions.first.longitude,
-        east = positions.first.longitude;
+    double south = positions.first.latitude;
+    double north = positions.first.latitude;
+    double west = positions.first.longitude;
+    double east = positions.first.longitude;
 
     for (var pos in positions) {
       if (pos.latitude < south) south = pos.latitude;
@@ -308,14 +304,13 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
       if (pos.longitude > east) east = pos.longitude;
     }
 
+    final bounds = LatLngBounds(
+      southwest: LatLng(south, west),
+      northeast: LatLng(north, east),
+    );
+
     _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(south, west),
-          northeast: LatLng(north, east),
-        ),
-        60.0, // Padding
-      ),
+      CameraUpdate.newLatLngBounds(bounds, 60),
     );
   }
 
@@ -347,27 +342,31 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
               ),
               markers: Set.of(_markers.values),
             ),
-            if (_isLoading) const Center(child: CircularProgressIndicator()),
+
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator()),
+
             if (!_isLoading && _errorMessage != null)
               Center(
                 child: Container(
                   padding: const EdgeInsets.all(16),
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withOpacity(0.85),
                   child: Text(
                     _errorMessage!,
-                    textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.red,
                       fontWeight: FontWeight.bold,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),
-            if (!_isLoading && _errorMessage == null && _markers.isEmpty)
+
+            if (!_isLoading && _markers.isEmpty && _errorMessage == null)
               const Center(
                 child: Card(
                   child: Padding(
-                    padding: EdgeInsets.all(16.0),
+                    padding: EdgeInsets.all(16),
                     child: Text(
                       'No active trucks found for your account.',
                       style: TextStyle(fontSize: 16),
@@ -378,6 +377,7 @@ class _TrackTrucksPageState extends State<TrackTrucksPage> {
           ],
         ),
       ),
+
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _zoomToFitMarkers,
         label: const Text("Center Map"),
