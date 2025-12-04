@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:logistics_toolkit/providers/chat_provider.dart';
+import 'package:logistics_toolkit/services/gemini_service.dart';
+import 'package:logistics_toolkit/widgets/chat_screen.dart';
+import 'package:logistics_toolkit/widgets/floating_chat_control.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 // For Styling the page
 import 'package:logistics_toolkit/config/theme.dart';
@@ -17,6 +21,9 @@ import 'features/disable/unable_account_page.dart';
 // Localization
 import 'package:easy_localization/easy_localization.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,13 +43,13 @@ void main() async {
 
   runApp(
     EasyLocalization(
-      supportedLocales: const [Locale('en'), Locale('hi')],
-      path: 'assets/translations',
-      fallbackLocale: const Locale('en'),
-      child: ChangeNotifierProvider(
-        create: (_) => ThemeNotifier(),
-        child: const MyApp(),
-      ),
+        supportedLocales: const [Locale('en'), Locale('hi')],
+        path: 'assets/translations',
+        fallbackLocale: const Locale('en'),
+        child: ChangeNotifierProvider(
+          create:  (_) => ThemeNotifier(),
+          child: const MyApp(),
+        )
     ),
   );
 }
@@ -57,16 +64,46 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ThemeNotifier>(
       builder: (context, notifier, child) {
-        return MaterialApp(
-          title: 'Logistics Toolkit',
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: notifier.themeMode, // <-- Switches theme
-          home: const RootPage(),
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: context.localizationDelegates,
-          supportedLocales: context.supportedLocales,
-          locale: context.locale,
+        return MultiProvider(providers: [
+          ChangeNotifierProvider(create: (_) =>
+              ChatProvider(gemini: GeminiService(), supabase: supabase))
+        ],
+
+            child:  MaterialApp(
+              title: 'Logistics Toolkit',
+              theme: AppTheme.lightTheme,
+              darkTheme: AppTheme.darkTheme,
+              themeMode: notifier.themeMode, // <-- Switches theme
+              home: Builder(builder: (context) {
+                return Stack(
+                  children: [
+                    const RootPage(),
+
+                    // ye yhan add kr dia hai home me
+                    // FloatingChatControl(
+                    //   onOpenChat: () {
+                    //     Navigator.of(context).push(
+                    //       MaterialPageRoute(
+                    //         builder: (_) => ChatScreen(
+                    //           onNavigate: (s) {
+                    //             Navigator.of(context).pushNamed('/$s');
+                    //           },
+                    //         ),
+                    //       ),
+                    //     );
+                    //   },
+                    //   listening: false,
+                    // )
+
+                  ],
+                );
+              }
+              ),
+              debugShowCheckedModeBanner: false,
+              localizationsDelegates: context.localizationDelegates,
+              supportedLocales: context.supportedLocales,
+              locale: context.locale,
+            )
         );
       },
     );
