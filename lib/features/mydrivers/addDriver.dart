@@ -7,7 +7,6 @@ import '../notifications/notification_service.dart';
 
 class AddDriverPage extends StatefulWidget {
   const AddDriverPage({super.key});
-
   @override
   _AddDriverPageState createState() => _AddDriverPageState();
 }
@@ -15,7 +14,6 @@ class AddDriverPage extends StatefulWidget {
 class _AddDriverPageState extends State<AddDriverPage> {
   final SupabaseClient supabase = Supabase.instance.client;
   final TextEditingController inputController = TextEditingController();
-
   bool _pageIsLoading = true;
   bool _actionIsLoading = false;
   List<Map<String, dynamic>> addedDrivers = [];
@@ -43,7 +41,6 @@ class _AddDriverPageState extends State<AddDriverPage> {
     }
 
     loggedInOwnerCustomId = ownerId;
-
     await fetchAddedDrivers();
     if (mounted) setState(() => _pageIsLoading = false);
   }
@@ -69,14 +66,12 @@ class _AddDriverPageState extends State<AddDriverPage> {
     try {
       Map<String, dynamic>? userResponse;
 
-      // FIXED REGEX - mobile number must be 10 digits
       if (RegExp(r'^\d{10}$').hasMatch(input)) {
         final result = await supabase
             .from('user_profiles')
             .select()
             .eq('mobile_number', input)
             .limit(1);
-
         if (result.isEmpty) {
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('no_driver_with_mobile'.tr())));
@@ -90,7 +85,6 @@ class _AddDriverPageState extends State<AddDriverPage> {
             .select()
             .eq('custom_user_id', input)
             .limit(1);
-
         if (result.isEmpty) {
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('driver_not_found_id'.tr())));
@@ -166,7 +160,6 @@ class _AddDriverPageState extends State<AddDriverPage> {
       final driverIds = relation
           .map((item) => item['driver_custom_id'].toString())
           .toList();
-
       final drivers = await supabase
           .from('user_profiles')
           .select()
@@ -235,6 +228,7 @@ class _AddDriverPageState extends State<AddDriverPage> {
         changedBy: email,
         changedByRole: role,
       );
+
       if (shouldDisable) {
         NotificationService.sendPushNotificationToUser(
           recipientId: driver['custom_user_id'],
@@ -260,10 +254,147 @@ class _AddDriverPageState extends State<AddDriverPage> {
 
       await fetchAddedDrivers();
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
+
+  Widget driverCard(Map<String, dynamic> driver) {
+    final isDisabled = driver['account_disable'] ?? false;
+
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 24, right: 16, top: 16, bottom: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  radius: 28,
+                  child: Icon(Icons.person, size: 30),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    driver['name'] ?? 'No Name',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "ID: ${driver['custom_user_id']}",
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              "Contact: ${driver['mobile_number'] ?? 'N/A'}",
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              "Status: ${isDisabled ? 'Disabled' : 'Enabled'}",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDisabled ? Colors.red : Colors.green,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton(
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('confirm_action'.tr()),
+                        content: Text(
+                          isDisabled
+                              ? 'confirm_enable'.tr()
+                              : 'confirm_disable'.tr(),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text('cancel'.tr()),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(
+                              isDisabled ? 'enable'.tr() : 'disable'.tr(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true) {
+                      await _toggleDriverAccountStatus(driver);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDisabled ? Colors.green : Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 10,
+                    ),
+                  ),
+                  child: Text(isDisabled ? 'Enable' : 'Disable'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 15),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.delete_forever,
+                      size: 32,
+                      color: Colors.red,
+                    ),
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text('confirm_deletion'.tr()),
+                          content: Text('confirm_remove_driver'.tr()),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text('cancel'.tr()),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: Text(
+                                'delete'.tr(),
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm == true) {
+                        await deleteDriver(driver['custom_user_id']);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -271,168 +402,50 @@ class _AddDriverPageState extends State<AddDriverPage> {
       body: _pageIsLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TextField(
-              controller: inputController,
-              decoration: InputDecoration(
-                labelText: 'enter_driver_id_mobile'.tr(),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _actionIsLoading ? null : addDriver,
-              icon: _actionIsLoading
-                  ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: inputController,
+                    decoration: InputDecoration(
+                      labelText: 'enter_driver_id_mobile'.tr(),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _actionIsLoading ? null : addDriver,
+                    icon: _actionIsLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
                   ))
-                  : const Icon(Icons.person_add_alt_1),
-              label: Text('add_driver'.tr()),
-            ),
+                        : const Icon(Icons.person_add_alt_1),
+                    label: Text('add_driver'.tr()),
+                  ),
 
-            const SizedBox(height: 18),
+                  const SizedBox(height: 18),
             Text('your_added_drivers'.tr(),
                 style: Theme.of(context).textTheme.titleLarge),
-            const Divider(),
-            Expanded(
-              child: addedDrivers.isEmpty
-                  ? Center(child: Text('no_drivers_added'.tr()))
-                  : RefreshIndicator(
-                onRefresh: fetchAddedDrivers,
-                child: ListView.builder(
-                  itemCount: addedDrivers.length,
-                  itemBuilder: (context, index) {
-                    final driver = addedDrivers[index];
-                    final isDisabled =
-                        driver['account_disable'] ?? false;
-                    return Card(
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.person),
-                        ),
-                        title: Text(
-                          driver['name'] ?? 'No Name',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          "ID: ${driver['custom_user_id']}\n"
-                              "Contact: ${driver['mobile_number'] ?? 'N/A'}\n"
-                              "Status: ${isDisabled ? 'Disabled' : 'Enabled'}",
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ElevatedButton.icon(
-                              icon: Icon(
-                                isDisabled
-                                    ? Icons.check_circle
-                                    : Icons.block,
-                                size: 18,
-                              ),
-                              label: Text(isDisabled
-                                  ? 'enable'.tr()
-                                  : 'disable'.tr()),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isDisabled
-                                    ? Colors.green
-                                    : Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () async {
-                                final confirm =
-                                await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: Text(
-                                        'confirm_action'.tr()),
-                                    content: Text(
-                                      (isDisabled
-                                          ? 'confirm_enable'
-                                          : 'confirm_disable')
-                                          .tr(),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(
-                                                ctx, false),
-                                        child: Text('cancel'.tr()),
-                                      ),
-                                      ElevatedButton(
-                                        onPressed: () =>
-                                            Navigator.pop(
-                                                ctx, true),
-                                        child: Text(isDisabled
-                                            ? 'enable'.tr()
-                                            : 'disable'.tr()),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirm == true) {
-                                  await _toggleDriverAccountStatus(
-                                      driver);
-                                }
-                              },
+                  const Divider(),
+                  Expanded(
+                    child: addedDrivers.isEmpty
+                        ? Center(child: Text('no_drivers_added'.tr()))
+                        : RefreshIndicator(
+                            onRefresh: fetchAddedDrivers,
+                            child: ListView.builder(
+                              itemCount: addedDrivers.length,
+                              itemBuilder: (context, index) =>
+                                  driverCard(addedDrivers[index]),
                             ),
-                            IconButton(
-                              icon: Icon(Icons.delete_forever,
-                                  color: Colors.red.shade700),
-                              onPressed: () async {
-                                final confirm =
-                                await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: Text(
-                                        'confirm_deletion'.tr()),
-                                    content: Text(
-                                        'confirm_remove_driver'
-                                            .tr()),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(
-                                                ctx, false),
-                                        child: Text('cancel'.tr()),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(
-                                                ctx, true),
-                                        child: Text(
-                                          'delete'.tr(),
-                                          style: const TextStyle(
-                                              color: Colors.red),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-
-                                if (confirm == true) {
-                                  await deleteDriver(
-                                      driver['custom_user_id']);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                          ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }

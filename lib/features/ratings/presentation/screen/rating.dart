@@ -20,15 +20,16 @@ class _RatingState extends State<Rating> {
   String? person1Id;
   String? person1Role;
   double rating1 = 0;
-  TextEditingController feedback1 = TextEditingController();
+  final feedback1 = TextEditingController();
 
   String? person2Name;
   String? person2Id;
   String? person2Role;
   double rating2 = 0;
-  TextEditingController feedback2 = TextEditingController();
+  final feedback2 = TextEditingController();
 
   bool isLoading = true;
+  bool canRate = true;
   final _client = Supabase.instance.client;
 
   @override
@@ -37,19 +38,10 @@ class _RatingState extends State<Rating> {
     _fetchNames().then((_) => fetchExistingRating());
   }
 
-  Future<int> submitRating({
-    required String shipmentId,
-    required String person1Id,
-    required String person2Id,
-    required double rating1,
-    required double rating2,
-    required String feedback1,
-    required String feedback2,
-  }) async {
+  Future<int> submitRating() async {
     final currentUser = _client.auth.currentUser;
-    if (currentUser == null) {
+    if (currentUser == null)
       throw Exception(tr("error_user_not_authenticated"));
-    }
 
     final profileResponse = await _client
         .from('user_profiles')
@@ -61,135 +53,48 @@ class _RatingState extends State<Rating> {
       throw Exception(tr("error_user_profile_not_found"));
     }
 
-    final currentUserRole =
-    (profileResponse['role'] as String?)?.trim().toLowerCase();
-    final currentUserCustomId = profileResponse['custom_user_id'] as String?;
+    final currentUserCustomId = profileResponse['custom_user_id'];
 
-    final shipmentResponse = await _client
-        .from('shipment')
-        .select('assigned_driver, assigned_agent, shipper_id, delivery_date')
-        .eq('shipment_id', shipmentId)
-        .maybeSingle();
-
-    if (shipmentResponse == null) {
-      throw Exception(tr("error_shipment_not_found"));
+    if (!canRate) {
+      throw Exception(tr("ratingPeriodExpiredOrLimitReached"));
     }
-
-    final deliveryDate =
-    DateTime.tryParse(shipmentResponse['delivery_date'] ?? "");
-
-    final isExpired = deliveryDate != null &&
-        DateTime.now().isAfter(deliveryDate.add(const Duration(days: 7)));
-
-    if (isExpired) throw Exception("ratingPeriodExpired".tr());
-
-    final driverId = shipmentResponse['assigned_driver'] as String?;
-    final assignedId = shipmentResponse['assigned_agent'] as String?;
-    final shipperId = shipmentResponse['shipper_id'] as String?;
 
     final List<Map<String, dynamic>> toSubmit = [];
 
-    // SAME LOGIC: null-safe
-    switch (currentUserRole) {
-      case 'shipper':
-        if (driverId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': driverId,
-            'rater_role': 'Shipper',
-            'ratee_role': 'Driver',
-            'rating': rating1.round(),
-            'feedback': feedback1.isNotEmpty ? feedback1 : null,
-          });
-        }
-        if (assignedId != null && assignedId != shipperId) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': assignedId,
-            'rater_role': 'Shipper',
-            'ratee_role': 'Agent',
-            'rating': rating2.round(),
-            'feedback': feedback2.isNotEmpty ? feedback2 : null,
-          });
-        }
-        break;
+    void addRating({
+      required String? rateeId,
+      required String rateeRole,
+      required double rating,
+      required String feedback,
+    }) {
+      if (rateeId != null) {
+        toSubmit.add({
+          'shipment_id': widget.shipmentId,
+          'rater_id': currentUserCustomId,
+          'ratee_id': rateeId,
+          'rater_role': currentUserRole,
+          'ratee_role': rateeRole,
+          'rating': rating.round(),
+          'feedback': feedback.isNotEmpty ? feedback : null,
+        });
+      }
+    }
 
-      case 'agent':
-        if (driverId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': driverId,
-            'rater_role': 'Agent',
-            'ratee_role': 'Driver',
-            'rating': rating1.round(),
-            'feedback': feedback1.isNotEmpty ? feedback1 : null,
-          });
-        }
-        if (shipperId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': shipperId,
-            'rater_role': 'Agent',
-            'ratee_role': 'Shipper',
-            'rating': rating2.round(),
-            'feedback': feedback2.isNotEmpty ? feedback2 : null,
-          });
-        }
-        break;
-
-      case 'truckowner':
-        if (driverId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': driverId,
-            'rater_role': 'TruckOwner',
-            'ratee_role': 'Driver',
-            'rating': rating1.round(),
-            'feedback': feedback1.isNotEmpty ? feedback1 : null,
-          });
-        }
-        if (shipperId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': shipperId,
-            'rater_role': 'TruckOwner',
-            'ratee_role': 'Shipper',
-            'rating': rating2.round(),
-            'feedback': feedback2.isNotEmpty ? feedback2 : null,
-          });
-        }
-        break;
-
-      case 'driver':
-        if (shipperId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': shipperId,
-            'rater_role': 'Driver',
-            'ratee_role': 'Shipper',
-            'rating': rating1.round(),
-            'feedback': feedback1.isNotEmpty ? feedback1 : null,
-          });
-        }
-        if (assignedId != null) {
-          toSubmit.add({
-            'shipment_id': shipmentId,
-            'rater_id': currentUserCustomId,
-            'ratee_id': assignedId,
-            'rater_role': 'Driver',
-            'ratee_role': 'Agent',
-            'rating': rating2.round(),
-            'feedback': feedback2.isNotEmpty ? feedback2 : null,
-          });
-        }
-        break;
+    if (person1Id != null) {
+      addRating(
+        rateeId: person1Id,
+        rateeRole: person1Role!,
+        rating: rating1,
+        feedback: feedback1.text,
+      );
+    }
+    if (person2Id != null) {
+      addRating(
+        rateeId: person2Id,
+        rateeRole: person2Role!,
+        rating: rating2,
+        feedback: feedback2.text,
+      );
     }
 
     if (toSubmit.isEmpty) {
@@ -237,16 +142,23 @@ class _RatingState extends State<Rating> {
       currentUserName = currentProfile?['name'];
       currentUserRole =
           (currentProfile?['role'] as String?)?.trim().toLowerCase();
+      final currentUserCustomId = currentProfile?['custom_user_id'];
 
       final shipment = await _client
           .from('shipment')
-          .select('shipper_id, assigned_driver, assigned_agent')
+          .select('shipper_id, assigned_driver, assigned_agent, delivery_date')
           .eq('shipment_id', widget.shipmentId)
           .maybeSingle();
 
+      final deliveryDate = DateTime.tryParse(shipment?['delivery_date'] ?? '');
+      if (deliveryDate == null ||
+          DateTime.now().isAfter(deliveryDate.add(const Duration(days: 7)))) {
+        canRate = false;
+      }
+
       final shipperId = shipment?['shipper_id'];
       final driverId = shipment?['assigned_driver'];
-      final agentId = shipment?['assigned_agent'];
+      final assignedId = shipment?['assigned_agent'];
 
       Future<String?> getName(String? id) async {
         if (id == null) return null;
@@ -260,58 +172,56 @@ class _RatingState extends State<Rating> {
 
       final shipperName = await getName(shipperId);
       final driverName = await getName(driverId);
-      final agentName = await getName(agentId);
+      final assignedName = await getName(assignedId);
 
       switch (currentUserRole) {
         case 'shipper':
           person1Name = driverName;
           person1Id = driverId;
           person1Role = tr("driver");
-
-          if (agentId != shipperId) {
-            person2Name = agentName;
-            person2Id = agentId;
-            person2Role = tr("agent");
+          if (assignedId != null && assignedId != currentUserCustomId) {
+            person2Name = assignedName;
+            person2Id = assignedId;
+            person2Role = tr('agent');
           }
           break;
 
         case 'agent':
           person1Name = driverName;
           person1Id = driverId;
-          person1Role = tr("driver");
-
-          person2Name = shipperName;
-          person2Id = shipperId;
-          person2Role = tr("shipper");
+          person1Role = tr('driver');
+          if (shipperId != null && shipperId != currentUserCustomId) {
+            person2Name = shipperName;
+            person2Id = shipperId;
+            person2Role = tr('shipper');
+          }
           break;
 
         case 'truckowner':
           person1Name = driverName;
           person1Id = driverId;
           person1Role = tr("driver");
-
-          person2Name = shipperName;
-          person2Id = shipperId;
-          person2Role = tr("shipper");
+          if (shipperId != null && shipperId != currentUserCustomId) {
+            person2Name = shipperName;
+            person2Id = shipperId;
+            person2Role = tr('shipper');
+          }
           break;
 
         case 'driver':
           person1Name = shipperName;
           person1Id = shipperId;
-          person1Role = tr("shipper");
-
-          if (agentId != shipperId) {
-            person2Name = agentName;
-            person2Id = agentId;
-            person2Role = tr("agent");
+          person1Role = tr('shipper');
+          if (assignedId != null && assignedId != shipperId) {
+            person2Name = assignedName;
+            person2Id = assignedId;
+            person2Role = tr('agent');
           }
           break;
       }
-
       if (mounted) setState(() => isLoading = false);
     } catch (e) {
       debugPrint("Error _fetchNames: $e");
-      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -331,25 +241,27 @@ class _RatingState extends State<Rating> {
 
       final response = await _client
           .from('ratings')
-          .select('ratee_id,rating,feedback')
+          .select('ratee_id,rating,feedback,edit_count')
           .eq('shipment_id', widget.shipmentId)
           .eq('rater_id', customId);
 
       for (final r in response) {
-        final rateeId = r['ratee_id'];
-
-        if (rateeId == person1Id) {
-          rating1 = (r['rating'] ?? 0).toDouble();
+        if (r['ratee_id'] == person1Id) {
+          rating1 = (r['rating'] as num? ?? 0).toDouble();
           feedback1.text = r['feedback'] ?? "";
-        } else if (rateeId == person2Id) {
-          rating2 = (r['rating'] ?? 0).toDouble();
+        } else if (r['ratee_id'] == person2Id) {
+          rating2 = (r['rating'] as num? ?? 0).toDouble();
           feedback2.text = r['feedback'] ?? "";
+        }
+        if ((r['edit_count'] as int? ?? 0) >= 3) {
+          canRate = false;
         }
       }
 
-      if (mounted) setState(() {});
+      if (mounted) setState(() => isLoading = false);
     } catch (e) {
       debugPrint("Error existing rating: $e");
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -382,16 +294,9 @@ class _RatingState extends State<Rating> {
   }
 
   void _handleSubmitRating() async {
+    setState(() => isLoading = true);
     try {
-      final editCount = await submitRating(
-        shipmentId: widget.shipmentId,
-        person1Id: person1Id ?? "",
-        person2Id: person2Id ?? "",
-        rating1: rating1,
-        rating2: rating2,
-        feedback1: feedback1.text,
-        feedback2: feedback2.text,
-      );
+      final editCount = await submitRating();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -406,6 +311,8 @@ class _RatingState extends State<Rating> {
           SnackBar(content: Text("${tr("error")}: $e")),
         );
       }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -422,25 +329,33 @@ class _RatingState extends State<Rating> {
             Text(
               "${tr('hello')} ${currentUserName ?? ''},",
               style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
 
             const SizedBox(height: 8),
             Text(tr("please_rate_your_experience")),
             const Divider(height: 32),
 
-            // PERSON 1
+            // Inlined UI logic to match original structure (Removed _buildRatingSection)
             if (person1Name != null) ...[
               Text(
                 "${tr("rate")} $person1Name (${person1Role ?? ''})",
-                style: const TextStyle(fontSize: 16),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              RatingBar.builder(
-                initialRating: rating1,
-                minRating: 1,
-                itemBuilder: (_, __) =>
-                const Icon(Icons.star, color: Colors.amber),
-                onRatingUpdate: (r) => setState(() => rating1 = r),
+              const SizedBox(height: 10),
+              Center(
+                child: RatingBar.builder(
+                  initialRating: rating1,
+                  minRating: 1,
+                  itemBuilder: (_, __) =>
+                  const Icon(Icons.star, color: Colors.amber),
+                  onRatingUpdate: (r) => setState(() => rating1 = r),
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -453,18 +368,27 @@ class _RatingState extends State<Rating> {
               ),
               const SizedBox(height: 28),
             ],
-            // PERSON 2
+
             if (person2Name != null) ...[
+              const Divider(
+                height: 32,
+              ), // Kept aesthetic divider from new code
               Text(
                 "${tr("rate")} $person2Name (${person2Role ?? ''})",
-                style: const TextStyle(fontSize: 16),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              RatingBar.builder(
-                initialRating: rating2,
-                minRating: 1,
-                itemBuilder: (_, __) =>
-                const Icon(Icons.star, color: Colors.amber),
-                onRatingUpdate: (r) => setState(() => rating2 = r),
+              const SizedBox(height: 10),
+              Center(
+                child: RatingBar.builder(
+                  initialRating: rating2,
+                  minRating: 1,
+                  itemBuilder: (_, __) =>
+                  const Icon(Icons.star, color: Colors.amber),
+                  onRatingUpdate: (r) => setState(() => rating2 = r),
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -477,13 +401,30 @@ class _RatingState extends State<Rating> {
               ),
               const SizedBox(height: 28),
             ],
-            Center(
-              child: FilledButton.icon(
-                onPressed: _handleSubmitRating,
-                icon: const Icon(Icons.send),
-                label: Text(tr("submit_ratings")),
+
+            if (!canRate)
+              Center(
+                child: Text(
+                  tr("ratingPeriodExpiredOrLimitReached"),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: _handleSubmitRating,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.send),
+                  label: Text(tr("submit_ratings")),
+                ),
               ),
-            ),
           ],
         ),
       ),
