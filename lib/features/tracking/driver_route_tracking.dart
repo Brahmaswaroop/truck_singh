@@ -94,10 +94,38 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
   }
 
   Future<void> _getCurrentLocation() async {
-    bool enabled = await Geolocator.isLocationServiceEnabled();
-    if (!enabled) {
-      _showErrorSnackBar("Enable location services!");
-      throw "Location services disabled";
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible:
+              false, // Prevent closing dialog by tapping outside
+          builder: (BuildContext dialogContext) {
+            // Use a different context name
+            return AlertDialog(
+              title: const Text("Location Services Disabled"),
+              content: const Text(
+                "Please enable location services to track the route. You will be returned to the previous screen.",
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text("OK"),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    Geolocator.openLocationSettings();
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      }
+      // This error will now be caught, but the page will have already been popped.
+      throw "Location services disabled by user";
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
@@ -106,8 +134,19 @@ class _DriverRouteTrackingPageState extends State<DriverRouteTrackingPage> {
 
       if (permission == LocationPermission.denied) {
         _showErrorSnackBar("Location permission denied!");
+        if (mounted)
+          Navigator.of(context).pop(); // Also go back if permission is denied
         throw "Permission denied";
       }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      _showErrorSnackBar(
+        "Location permissions are permanently denied. Please enable them from app settings.",
+      );
+      if (mounted)
+        Navigator.of(context).pop(); // Also go back if permanently denied
+      throw "Permission denied forever";
     }
 
     Position pos = await Geolocator.getCurrentPosition();

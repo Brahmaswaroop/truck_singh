@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/theme.dart';
 import 'models/bilty_model.dart';
@@ -765,7 +766,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                         _InfoRow(
                           label: 'Delivery Date',
                           value:
-                          '${widget.deliveryDate!.day.toString().padLeft(2, '0')}/${widget.deliveryDate!.month.toString().padLeft(2, '0')}/${widget.deliveryDate!.year}',
+                              '${widget.deliveryDate!.day.toString().padLeft(2, '0')}/${widget.deliveryDate!.month.toString().padLeft(2, '0')}/${widget.deliveryDate!.year}',
                         ),
                       ],
                     ],
@@ -795,7 +796,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                         _InfoRow(
                           label: 'Delivery Date',
                           value:
-                          '${widget.deliveryDate!.day.toString().padLeft(2, '0')}/${widget.deliveryDate!.month.toString().padLeft(2, '0')}/${widget.deliveryDate!.year}',
+                              '${widget.deliveryDate!.day.toString().padLeft(2, '0')}/${widget.deliveryDate!.month.toString().padLeft(2, '0')}/${widget.deliveryDate!.year}',
                         ),
                     ],
                   );
@@ -867,9 +868,8 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                       ),
                       SizedBox(height: 8),
                       // Goods items as cards
-                      ...widget.goods
-                          .map(
-                            (item) => Container(
+                      ...widget.goods.map(
+                        (item) => Container(
                           margin: EdgeInsets.only(bottom: 8),
                           padding: EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -881,9 +881,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                             children: [
                               Text(
                                 item.description,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.w500),
                               ),
                               SizedBox(height: 8),
                               Row(
@@ -912,8 +910,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                             ],
                           ),
                         ),
-                      )
-                          .toList(),
+                      ),
                     ],
                   );
                 } else {
@@ -944,7 +941,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                         ],
                       ),
                       ...widget.goods.map(
-                            (item) => TableRow(
+                        (item) => TableRow(
                           children: [
                             Padding(
                               padding: EdgeInsets.all(8),
@@ -1005,7 +1002,6 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                       _InfoRow(
                         label: 'Basic Fare (₹)',
                         value: widget.basicFare,
-
                       ),
                       SizedBox(height: 8),
                       _InfoRow(
@@ -1155,12 +1151,12 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
               children: selectedCharges
                   .map(
                     (charge) => Chip(
-                  label: Text(charge.replaceAll('_', ' ').toUpperCase()),
-                  backgroundColor: AppColors.tealBlue.withAlpha(
-                    (0.1 * 255).round(),
-                  ),
-                ),
-              )
+                      label: Text(charge.replaceAll('_', ' ').toUpperCase()),
+                      backgroundColor: AppColors.tealBlue.withAlpha(
+                        (0.1 * 255).round(),
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
           ],
@@ -1273,13 +1269,13 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
             SizedBox(height: 16),
             Text(
               '1. The trader should load the goods only after completing all the vehicle documents.\n'
-                  '2. Insurance of goods more than Rs. 10,000/- is a must.\n'
-                  '3. Goods will be transported at owner\'s risk.\n'
-                  '4. Payment should be made as per agreed terms.\n'
-                  '5. Any dispute will be subject to local jurisdiction.\n'
-                  '6. E-way bill compliance is mandatory for GST registered businesses.\n'
-                  '7. Delivery will be made only to the authorized person.\n'
-                  '8. Detention charges will be applicable for delays beyond control.',
+              '2. Insurance of goods more than Rs. 10,000/- is a must.\n'
+              '3. Goods will be transported at owner\'s risk.\n'
+              '4. Payment should be made as per agreed terms.\n'
+              '5. Any dispute will be subject to local jurisdiction.\n'
+              '6. E-way bill compliance is mandatory for GST registered businesses.\n'
+              '7. Delivery will be made only to the authorized person.\n'
+              '8. Detention charges will be applicable for delays beyond control.',
               style: TextStyle(fontSize: 14),
             ),
           ],
@@ -1647,7 +1643,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
                       ],
                     ),
                     ...widget.goods.map(
-                          (item) => pw.TableRow(
+                      (item) => pw.TableRow(
                         children: [
                           pw.Padding(
                             padding: const pw.EdgeInsets.all(3),
@@ -1895,10 +1891,7 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
           pw.Expanded(
             child: pw.Text(
               value,
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 7.5,
-              ),
+              style: pw.TextStyle(font: font, fontSize: 7.5),
               maxLines: 1,
               overflow: pw.TextOverflow.clip,
             ),
@@ -1996,35 +1989,51 @@ class _TransportBiltyPreviewState extends State<TransportBiltyPreview> {
         },
       };
 
-      await supabase.from('bilties').insert(biltyData);
-      final pdfFile = await _generatePDF();
-      final pdfBytes = await pdfFile.readAsBytes();
-      final filePath = '$customUserId/${widget.biltyNo}.pdf';
-      await supabase.storage
+      final existingBilty = await supabase
           .from('bilties')
-          .uploadBinary(
-        filePath,
-        pdfBytes,
-        fileOptions: const FileOptions(
-          cacheControl: '3600',
-          upsert: true,
-          contentType: 'application/pdf',
+          .select("bilty_no")
+          .eq("bilty_no", biltyData['bilty_no']!)
+          .maybeSingle();
+
+      final pdfFile = await _generatePDF();
+
+      if (existingBilty == null) {
+        await supabase.from('bilties').insert(biltyData);
+        final pdfBytes = await pdfFile.readAsBytes();
+        final filePath = '$customUserId/${widget.biltyNo}.pdf';
+        await supabase.storage
+            .from('bilties')
+            .uploadBinary(
+              filePath,
+              pdfBytes,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: true,
+                contentType: 'application/pdf',
+              ),
+            );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bilty uploaded and saved successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(pdfFile.path)],
+          text: "Bilty: #$widget.shipmentId",
         ),
       );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bilty uploaded and saved successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error uploading bilty: ${e.toString()}'),
+            content: Text('Error: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -2074,17 +2083,15 @@ class _SignatureLine extends StatelessWidget {
         Container(
           width: 150,
           height: 80,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)),
           child: signatureData != null && signatureData!.isNotEmpty
               ? ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Image.memory(
-              base64Decode(signatureData!),
-              fit: BoxFit.contain,
-            ),
-          )
+                  borderRadius: BorderRadius.circular(4),
+                  child: Image.memory(
+                    base64Decode(signatureData!),
+                    fit: BoxFit.contain,
+                  ),
+                )
               : Container(width: 150, height: 1, color: Theme.of(context).cardColor,),
         ),
         SizedBox(height: 4),
