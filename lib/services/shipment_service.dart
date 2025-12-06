@@ -1,5 +1,4 @@
 import 'dart:developer' as dev;
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import "../services/user_data_service.dart";
 
@@ -285,7 +284,6 @@ class ShipmentService {
   final profileResponse = await _supabase
       .from('user_profiles')
       .select('name, email,role')
-     // .eq('owner_custom_id', customUserId)
       .eq('custom_user_id', userId)
       .single();
 
@@ -295,10 +293,4 @@ class ShipmentService {
       rethrow;
     }
   }
-
-
-
-
-
-
 }
