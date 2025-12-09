@@ -60,6 +60,30 @@ class ShipmentService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getPendingShipments() async {
+    try {
+      UserDataService.clearCache();
+      final customUserId = await UserDataService.getCustomUserId();
+      print(customUserId);
+      if (customUserId == null) {
+        throw Exception("User not logged in or has no custom ID");
+      }
+
+      final shipmentsRes = await _supabase
+          .from('shipment')
+          .select('*, shipper:user_profiles!fk_shipper_custom_id(name)')
+          .eq('assigned_agent', customUserId)
+          .isFilter('assigned_driver', null )
+          .neq('booking_status','Completed')
+      ;
+
+      return List<Map<String, dynamic>>.from(shipmentsRes);
+    } catch (e) {
+      print("Error fetching assigned shipments: $e");
+      rethrow;
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getShipmentByStatus({
     required String status,
   }) async {
