@@ -48,7 +48,6 @@ class ChatProvider extends ChangeNotifier {
   List<ChatMessage> messages = [];
   bool ttsEnabled = true;
   bool speaking = false;
- // bool loading = false;   // check krnege iski need h ki ni
 
   //New : Add typing indicator variable
   bool _isTyping = false;
@@ -118,9 +117,9 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> send(
-    String input, {
-    required void Function(String screen) onNavigate,
-  }) async {
+      String input, {
+        required void Function(String screen) onNavigate,
+      }) async {
     addUserMessage(input);
 
     //for start ai is typing
@@ -261,8 +260,6 @@ class ChatProvider extends ChangeNotifier {
 
       //GET SHIPMENTS BY STATUS
         case 'get_shipments_by_status':
-
-          //for pending status
           if(params["status"] == "Pending"){
 
             final response = await ShipmentService.getPendingShipments();
@@ -455,7 +452,7 @@ class ChatProvider extends ChangeNotifier {
           break;
 
 
-          // OPEN SCREEN
+      // OPEN SCREEN
         case 'open_screen':
           final screen = params['screen']?.toString() ?? '';
           replyText = parsed.reply.isNotEmpty
@@ -476,7 +473,7 @@ class ChatProvider extends ChangeNotifier {
           }
           break;
         default:
-          // unknown: model may already have included a helpful reply
+        // unknown: model may already have included a helpful reply
           if (replyText.isEmpty) {
             replyText = _localizeReply(
               langCode: parsed.language,
@@ -517,12 +514,11 @@ class ChatProvider extends ChangeNotifier {
           enText:
           'I am having trouble understanding this, please try again in simpler words.',
         )
-          , isUser: false),
+            , isUser: false),
       );
       print(e);
     } finally {
       _isTyping = false;
-       // loading = false;
       notifyListeners();
     }
   }

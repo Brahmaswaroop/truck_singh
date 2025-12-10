@@ -17,9 +17,9 @@ class GeminiService {
 
   //userInput Function       and isme hm apne last 10 - 20 messages means conversation bhi send krenge for better result
   Future<String> queryRaw(
-    String userInput,
-    List<ChatMessage> conversation,
-  ) async
+      String userInput,
+      List<ChatMessage> conversation,
+      ) async
   {
 
     final currentUser = SupabaseService.getCurrentUser();
