@@ -203,6 +203,14 @@ class ChatService {
     return response as String;
   }
 
+  Future<String> getComplaintChatRoom(String complaintId) async {
+    final response = await _client.rpc(
+      'get_or_create_complaint_chat_room',
+      params: {'p_complaint_id': complaintId},
+    );
+    return response as String;
+  }
+
   Future<void> markRoomAsRead(String roomId) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return;

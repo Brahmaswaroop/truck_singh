@@ -217,7 +217,21 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     }
 
     try {
-      final res = await _supabaseService.getShipmentsForUser(userId);
+      List<dynamic> res;
+
+      // --- FETCH LOGIC MODIFIED FOR DRIVERS ---
+      if (role == 'driver' && customUserId != null) {
+        // If user is a driver, fetch shipments where they are the assigned driver
+        res = await Supabase.instance.client
+            .from('shipment')
+            .select()
+            .eq('assigned_driver', customUserId!)
+            .order('created_at', ascending: false);
+      } else {
+        // Otherwise use the default service (likely fetches by shipper_id or transporter logic)
+        res = await _supabaseService.getShipmentsForUser(userId);
+      }
+      // ----------------------------------------
 
       // --- LOGIC FOR MANAGED SHIPMENTS ---
       // Identify shipments created by this user but managed by someone else (agent/truckowner)
@@ -278,7 +292,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       final completedShipments = res.where((s) {
         final status = s['booking_status']?.toString().toLowerCase() ?? '';
         return status != 'pending';
-      }).toList();
+      }).map((e) => e as Map<String, dynamic>).toList();
 
       if (mounted) {
         setState(() {
