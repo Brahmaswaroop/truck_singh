@@ -17,6 +17,7 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
   List<Map<String, dynamic>> complaintsMade = [];
   List<Map<String, dynamic>> complaintsAgainst = [];
   List<Map<String, dynamic>> allComplaints = [];
+  List<Map<String, dynamic>> complaintsManaged = [];
   bool loading = true;
   String? error;
   TabController? _tabController;
@@ -25,12 +26,14 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
   String _typeFilter = 'All';
   DateTimeRange? _dateRange;
   String _searchQuery = '';
-  final ptr.RefreshController _refreshController =
-  ptr.RefreshController(initialRefresh: false);
+  final ptr.RefreshController _refreshController = ptr.RefreshController(
+    initialRefresh: false,
+  );
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     fetchCurrentUserRoleAndComplaints();
   }
 
@@ -47,6 +50,32 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           showComplaintDetails(complaint);
         });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    _refreshController.dispose();
+    super.dispose();
+  }
+
+  void _setupTabController() {
+    final bool isAdmin = _isAdminOnly(_currentUserRole);
+    // For both admin and non-admin, the tab count is 2
+    final int requiredTabCount = isAdmin ? 2 : 2;
+
+    // Only recreate the controller if it's null or if the length is incorrect.
+    // This prevents unnecessary disposal and recreation during refreshes.
+    if (_tabController == null || _tabController!.length != requiredTabCount) {
+      _tabController?.dispose(); // Dispose the old one if it exists
+      _tabController = TabController(length: requiredTabCount, vsync: this);
+
+      // Since we created a new controller, we need to rebuild the widget
+      // to make the TabBar use the new instance.
+      if (mounted) {
+        setState(() {});
       }
     }
   }
@@ -70,11 +99,7 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
 
       _currentUserRole = profile?['role'];
       final customUserId = profile?['custom_user_id'];
-
-      // Create tab controller after we know the role
-      int tabCount = _isAdminOnly(_currentUserRole) ? 1 : 2;
-      _tabController?.dispose();
-      _tabController = TabController(length: tabCount, vsync: this);
+      _setupTabController();
 
       final madeRes = await supabase
           .from('complaints')
@@ -88,19 +113,31 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
           .eq('target_user_id', customUserId)
           .order('created_at', ascending: false);
 
-      List<Map<String, dynamic>> allRes = [];
+      List<Map<String, dynamic>> allComplaintsData = [];
+      List<Map<String, dynamic>> managedComplaintsData = [];
       if (_isAdminOnly(_currentUserRole)) {
         final all = await supabase
             .from('complaints')
             .select()
+            .isFilter('managed_by', null)
             .order('created_at', ascending: false);
-        allRes = List<Map<String, dynamic>>.from(all);
+        allComplaintsData = all;
+
+        final managed = await supabase
+            .from('complaints')
+            .select()
+            .eq('managed_by', customUserId);
+        managedComplaintsData = managed;
       }
 
       setState(() {
         complaintsMade = List<Map<String, dynamic>>.from(madeRes);
         complaintsAgainst = List<Map<String, dynamic>>.from(againstRes);
-        allComplaints = allRes;
+        allComplaints = List<Map<String, dynamic>>.from(allComplaintsData);
+        complaintsManaged = List<Map<String, dynamic>>.from(
+          managedComplaintsData,
+        );
+
         loading = false;
       });
     } catch (e) {
@@ -109,7 +146,12 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
         loading = false;
       });
     } finally {
-      _refreshController.refreshCompleted();
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+        _refreshController.refreshCompleted();
+      }
     }
   }
 
@@ -142,7 +184,8 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
   }
 
   List<Map<String, dynamic>> _applyFilters(
-      List<Map<String, dynamic>> complaints) {
+      List<Map<String, dynamic>> complaints,
+      ) {
     return complaints.where((c) {
       if (_statusFilter != 'All' && (c['status'] ?? 'Open') != _statusFilter)
         return false;
@@ -155,7 +198,8 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
         final dt = DateTime.tryParse(c['created_at'])?.toLocal();
         if (dt == null ||
             dt.isBefore(_dateRange!.start) ||
-            dt.isAfter(_dateRange!.end)) return false;
+            dt.isAfter(_dateRange!.end))
+          return false;
       }
 
       final q = _searchQuery.toLowerCase();
@@ -165,7 +209,8 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
         final userName = (c['target_user_name'] ?? '').toString().toLowerCase();
         if (!subject.contains(q) &&
             !complaint.contains(q) &&
-            !userName.contains(q)) return false;
+            !userName.contains(q))
+          return false;
       }
 
       return true;
@@ -187,16 +232,25 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                 value: _statusFilter,
                 items: [
                   DropdownMenuItem(
-                      value: 'All', child: Text('all_statuses'.tr())),
+                    value: 'All',
+                    child: Text('all_statuses'.tr()),
+                  ),
                   DropdownMenuItem(value: 'Open', child: Text('open'.tr())),
                   DropdownMenuItem(
-                      value: 'Clarified', child: Text('clarified'.tr())),
+                    value: 'Clarified',
+                    child: Text('clarified'.tr()),
+                  ),
                   DropdownMenuItem(
-                      value: 'Resolved', child: Text('resolved'.tr())),
+                    value: 'Resolved',
+                    child: Text('resolved'.tr()),
+                  ),
                   DropdownMenuItem(
-                      value: 'Rejected', child: Text('rejected'.tr())),
+                    value: 'Rejected',
+                    child: Text('rejected'.tr()),
+                  ),
                 ],
-                onChanged: (val) => setState(() => _statusFilter = val ?? 'All'),
+                onChanged: (val) =>
+                    setState(() => _statusFilter = val ?? 'All'),
               ),
               DropdownButton<String>(
                 value: _typeFilter,
@@ -204,7 +258,9 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                   DropdownMenuItem(value: 'All', child: Text('all_types'.tr())),
                   DropdownMenuItem(value: 'user', child: Text('user'.tr())),
                   DropdownMenuItem(
-                      value: 'shipment', child: Text('shipment'.tr())),
+                    value: 'shipment',
+                    child: Text('shipment'.tr()),
+                  ),
                 ],
                 onChanged: (val) => setState(() => _typeFilter = val ?? 'All'),
               ),
@@ -261,13 +317,22 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
     }
   }
 
-  void showComplaintDetails(Map<String, dynamic> complaint) {
-    Navigator.push(
+  void showComplaintDetails(Map<String, dynamic> complaint) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ComplaintDetailsPage(complaint: complaint),
       ),
     );
+
+    // After returning, refresh the complaints list
+    // This will re-fetch all data and update the UI
+    if (mounted) {
+      setState(() {
+        _refreshController.requestRefresh();
+      });
+      await fetchCurrentUserRoleAndComplaints();
+    }
   }
 
   Widget _buildComplaintList(
@@ -288,10 +353,7 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 8),
-            Text(
-              'nothing_to_show'.tr(),
-              style: TextStyle(color: Colors.grey),
-            ),
+            Text('nothing_to_show'.tr(), style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -303,9 +365,9 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
       itemBuilder: (context, index) {
         final complaint = filtered[index];
 
-        // Use local time for display and overdue calculation
-        final created = DateTime.tryParse(complaint['created_at'] ?? '')
-            ?.toLocal(); // may be null
+        final created = DateTime.tryParse(
+          complaint['created_at'] ?? '',
+        )?.toLocal(); // may be null
         final isOverdue = _isOverdueOpenComplaint(complaint);
 
         int overdueDays = 0;
@@ -339,7 +401,11 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                     const Positioned(
                       right: 0,
                       bottom: 0,
-                      child: Icon(Icons.verified, color: Colors.green, size: 16),
+                      child: Icon(
+                        Icons.verified,
+                        color: Colors.green,
+                        size: 16,
+                      ),
                     ),
                 ],
               ),
@@ -358,18 +424,21 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                   if (isOverdue)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       margin: const EdgeInsets.only(left: 6),
                       decoration: BoxDecoration(
                         color: Colors.red.shade100,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        "Overdue (${overdueDays} days)",
+                        "Overdue ($overdueDays days)",
                         style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.red,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
 
@@ -418,8 +487,7 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                   if (showParties) ...[
                     FutureBuilder(
                       future: _fetchUserNamesAndRoles(complaint),
-                      builder:
-                          (context, AsyncSnapshot<List<String>> snapshot) {
+                      builder: (context, AsyncSnapshot<List<String>> snapshot) {
                         if (!snapshot.hasData) return const SizedBox.shrink();
                         final parties = snapshot.data!;
                         return Padding(
@@ -489,7 +557,8 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
   }
 
   Future<List<String>> _fetchUserNamesAndRoles(
-      Map<String, dynamic> complaint) async {
+      Map<String, dynamic> complaint,
+      ) async {
     final supabase = Supabase.instance.client;
     String complainer = '';
     String target = '';
@@ -546,12 +615,13 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
             fontSize: 14,
           ),
           tabs: [
-            if (!_isAdminOnly(_currentUserRole)) ...[
+            if (_isAdminOnly(_currentUserRole)) ...[
+              Tab(text: 'all_complaints'.tr()),
+              Tab(text: 'managed_complaints'.tr()),
+            ] else ...[
               Tab(text: 'complaints_made'.tr()),
               Tab(text: 'complaints_against'.tr()),
             ],
-            if (_isAdminOnly(_currentUserRole))
-              Tab(text: 'all_complaints'.tr()),
           ],
         ),
       ),
@@ -577,10 +647,16 @@ class _ComplaintHistoryPageState extends State<ComplaintHistoryPage>
                   if (!_isAdminOnly(_currentUserRole)) ...[
                     _buildComplaintList(complaintsMade),
                     _buildComplaintList(complaintsAgainst),
+                  ] else ...[
+                    _buildComplaintList(
+                      allComplaints,
+                      showParties: true,
+                    ),
+                    _buildComplaintList(
+                      complaintsManaged,
+                      showParties: true,
+                    ),
                   ],
-                  if (_isAdminOnly(_currentUserRole))
-                    _buildComplaintList(allComplaints,
-                        showParties: true),
                 ],
               ),
             ),

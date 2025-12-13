@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:logistics_toolkit/services/user_data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:logistics_toolkit/services/chat_service.dart';
+import 'package:logistics_toolkit/features/chat/chat_page.dart';
+import 'package:logistics_toolkit/features/notifications/notification_service.dart';
 import 'complain_screen.dart';
 
 class ComplaintDetailsPage extends StatefulWidget {
@@ -17,6 +21,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
   bool _isActionLoading = false;
   bool _isLoading = true;
   RealtimeChannel? _complaintChannel;
+  final _chat = ChatService();
 
   @override
   void initState() {
@@ -39,7 +44,6 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
       setState(() => _isLoading = false);
     }
   }
-
 
   void setupRealtimeSubscription() {
     final complaintId = _currentComplaint['id'];
@@ -79,7 +83,8 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
           Navigator.pop(context);
         }
       },
-    ).subscribe();
+    )
+        .subscribe();
   }
 
   Future<void> _refreshComplaint() async {
@@ -96,11 +101,11 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     } catch (_) {}
   }
 
-
   Future<void> _performAction(Future<void> Function() action) async {
     setState(() => _isActionLoading = true);
     try {
       await action();
+      await _refreshComplaint();
     } finally {
       if (mounted) setState(() => _isActionLoading = false);
     }
@@ -162,7 +167,6 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     });
   }
 
-
   Future<void> _appealComplaint() async {
     final confirmed = await _showConfirmationDialog(
       'appeal_decision'.tr(),
@@ -186,25 +190,259 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
       final events = List.from(existing['events'] ?? []);
       events.add(historyEvent);
 
-      await Supabase.instance.client.from('complaints').update({
+      await Supabase.instance.client
+          .from('complaints')
+          .update({
         'status': 'Open',
         'agent_justification': null,
         'history': {'events': events},
-      }).eq('id', _currentComplaint['id']);
-
-      await _refreshComplaint();
+      })
+          .eq('id', _currentComplaint['id']);
     });
+  }
+
+  Future<void> _showSendNotificationDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final titleController = TextEditingController(
+      text: 'message_from_admin'.tr(),
+    );
+    final messageController = TextEditingController();
+
+    // These correspond to the parties involved in the complaint
+    final recipientOptions = {
+      'Complainer': _currentComplaint['user_id'],
+      'Target': _currentComplaint['target_user_id'],
+    };
+
+    // Default to notifying the complainer
+    String? selectedRecipientId = recipientOptions['Complainer'];
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        // Use a StatefulWidget to manage the state of the dropdown inside the dialog
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('send_notification'.tr()),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      // Recipient Role Dropdown
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedRecipientId,
+                        decoration: InputDecoration(
+                          labelText: 'recipient'.tr(),
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: recipientOptions.entries.map((entry) {
+                          return DropdownMenuItem<String>(
+                            value: entry.value,
+                            child: Text(entry.key),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setDialogState(() {
+                            selectedRecipientId = newValue;
+                          });
+                        },
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'recipient_required'.tr()
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Title Field
+                      TextFormField(
+                        controller: titleController,
+                        decoration: InputDecoration(
+                          labelText: 'notification_title'.tr(),
+                          border: const OutlineInputBorder(),
+                        ),
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'title_required'.tr()
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Message Field
+                      TextFormField(
+                        controller: messageController,
+                        decoration: InputDecoration(
+                          labelText: 'notification_message'.tr(),
+                          border: const OutlineInputBorder(),
+                        ),
+                        maxLines: 4,
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'message_required'.tr()
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('cancel'.tr()),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                FilledButton(
+                  child: Text('send'.tr()),
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      // Perform the send action
+                      await NotificationService.sendNotification(
+                        recipientUserId: selectedRecipientId!,
+                        title: titleController.text,
+                        message: messageController.text,
+                        data: {'complaint_id': _currentComplaint['id']},
+                      );
+
+                      if (!mounted) return;
+                      Navigator.of(context).pop(); // Close the dialog
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('notification_sent_successfully'.tr()),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmComplaintChat(String complaintId, name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("start_chat".tr()),
+        content: Text("confirm_start_chat $name?".tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text("cancel".tr()),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text("start".tr()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final agentId = await _chat.getCurrentCustomUserId();
+      if (agentId == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("user_not_identified".tr())));
+        return;
+      }
+
+      _openChat(
+        "Chat with $name",
+            () => _chat.getComplaintChatRoom(complaintId),
+      );
+    }
+  }
+
+  Future<void> _openChat(String title, Future<String> Function() room) async {
+    try {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("opening_chat".tr())));
+
+      final roomId = await room();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatPage(roomId: roomId, chatTitle: title),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("failed_open_chat $e".tr())));
+      }
+    }
+  }
+
+  Future<void> _manageComplaint() async {
+    final managerId = await UserDataService.getCustomUserId();
+    if (managerId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("user_not_identified".tr())));
+      }
+      return;
+    }
+    _performAction(() async {
+      if (_currentComplaint['managed_by'] != null &&
+          _currentComplaint['managed_by'] != managerId) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("already_managed".tr())));
+        return;
+      }
+      if (_currentComplaint['managed_by'] == managerId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("already_managing_complaint".tr())),
+        );
+        return;
+      }
+
+      final time = DateTime.now().toIso8601String();
+
+      final historyEvent = {
+        'type': 'managed',
+        'title': 'Complaint Managed',
+        'description': 'Complaint is now being managed.',
+        'timestamp': time,
+        'user_id': managerId,
+      };
+
+      final existing = _currentComplaint['history'] as Map? ?? {};
+      final events = List.from(existing['events'] ?? []);
+      events.add(historyEvent);
+
+      await Supabase.instance.client
+          .from('complaints')
+          .update({
+        'managed_by': managerId,
+        'history': {'events': events},
+      })
+          .eq('id', _currentComplaint['id']);
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("success".tr())));
+      }
+    });
+  }
+
+  Future<String?> get _customUserId async {
+    final userId = await UserDataService.getCustomUserId();
+    return userId;
   }
 
   @override
   Widget build(BuildContext context) {
-    final status = _currentComplaint['status'] ?? 'Open';
-    final isComplaintOwner =
-        _currentComplaint['user_id'] ==
-            Supabase.instance.client.auth.currentUser?.id;
-
-    final canEdit = isComplaintOwner && status != 'Resolved';
-
     return Scaffold(
       appBar: AppBar(
         title: Text('complaint_details_section'.tr()),
@@ -222,17 +460,18 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
             child: Column(
               children: [
                 _buildStatusHeader(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 _buildBasicInfo(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 _buildTimeline(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 _buildComplaintDetails(),
-                const SizedBox(height: 16),
-                if (_currentComplaint['attachment_url'] != null)
+                if (_currentComplaint['attachment_url'] != null) ...[
+                  const SizedBox(height: 8),
                   _buildAttachment(),
-                const SizedBox(height: 16),
-                _buildActions(canEdit),
+                ],
+                const SizedBox(height: 8),
+                _buildActions(),
               ],
             ),
           ),
@@ -241,62 +480,138 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     );
   }
 
-  Widget _buildActions(bool canEdit) {
+  Widget _buildActions() {
     final isComplaintOwner =
         _currentComplaint['user_id'] ==
             Supabase.instance.client.auth.currentUser?.id;
-
     final status = _currentComplaint['status'];
-
     final canAppeal =
-        isComplaintOwner &&
-            (status == 'Rejected' || status == 'Resolved');
+        isComplaintOwner && (status == 'Rejected' || status == 'Resolved');
+    final canEdit = isComplaintOwner && status != 'Resolved';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            if (_isActionLoading)
-              const CircularProgressIndicator(),
+    return FutureBuilder<String?>(
+      future: _customUserId,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
 
-            if (! _isActionLoading)
-              if (canEdit)
-                ElevatedButton.icon(
-                  onPressed: _editComplaint,
-                  icon: const Icon(Icons.edit),
-                  label: Text('edit_complaint'.tr()),
-                )
-              else if (canAppeal)
-                ElevatedButton.icon(
-                  onPressed: _appealComplaint,
-                  icon: const Icon(Icons.undo),
-                  label: Text('appeal_decision_btn'.tr()),
+        final customUserId = snapshot.data;
+        final bool isAdmin = customUserId?.startsWith('ADM') ?? false;
+        final List<Widget> actions = [];
+
+        if (_isActionLoading) {
+          actions.add(const Center(child: CircularProgressIndicator()));
+        } else {
+          if (isAdmin) {
+            if (_currentComplaint['managed_by'] != customUserId) {
+              actions.add(
+                TextButton.icon(
+                  onPressed: _manageComplaint,
+                  icon: const Icon(Icons.control_point_outlined),
+                  label: Text('manage_complaint'.tr()),
+                  style: TextButton.styleFrom(foregroundColor: Colors.green),
+                ),
+              );
+            }
+            if (_currentComplaint['managed_by'] == customUserId) {
+              actions.add(
+                TextButton.icon(
+                  onPressed: _showSendNotificationDialog,
+                  icon: const Icon(Icons.send_to_mobile),
+                  label: Text('send_notification'.tr()),
+                  style: TextButton.styleFrom(foregroundColor: Colors.purple),
+                ),
+              );
+            }
+          } else {
+            actions.add(
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () =>
+                      _confirmComplaintChat(
+                        _currentComplaint['id'],
+                        _currentComplaint['complainer_user_name'],
+                      ),
+                  icon: const Icon(Icons.chat),
+                  label: Text('chat'.tr()),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
+                    backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                   ),
-                )
-              else
-                Text(
-                  'no_actions'.tr(),
-                  style: TextStyle(color: Colors.grey),
-                ),
-
-            if (isComplaintOwner) ...[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: _deleteComplaint,
-                icon: const Icon(Icons.delete_forever),
-                label: Text('delete_complaint'.tr()),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red,
                 ),
               ),
-            ]
-          ],
-        ),
-      ),
+            );
+          }
+          if (canEdit) {
+            actions.add(
+              ElevatedButton.icon(
+                onPressed: _editComplaint,
+                icon: const Icon(Icons.edit),
+                label: Text('edit_complaint'.tr()),
+              ),
+            );
+          } else if (canAppeal) {
+            actions.add(
+              ElevatedButton.icon(
+                onPressed: _appealComplaint,
+                icon: const Icon(Icons.undo),
+                label: Text('appeal_decision_btn'.tr()),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            );
+          }
+        }
+
+        if (isComplaintOwner) {
+          actions.add(
+            TextButton.icon(
+              onPressed: _deleteComplaint,
+              icon: const Icon(Icons.delete_forever),
+              label: Text('delete_complaint'.tr()),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+            ),
+          );
+        }
+
+        if (actions.isEmpty) {
+          return Card(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16.0),
+              child: Center(
+                child: Text(
+                  'no_actions'.tr(),
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: List.generate(actions.length, (index) {
+                return Padding(
+                  padding: EdgeInsets.only(top: index == 0 ? 0 : 8.0),
+                  child: actions[index],
+                );
+              }),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -329,7 +644,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                   ),
                 ],
               ),
-            )
+            ),
           ],
         ),
       ),
@@ -343,17 +658,22 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
         child: Column(
           children: [
             _buildInfoRow('subject'.tr(), _currentComplaint['subject']),
+            _buildInfoRow('managed_by'.tr(), _currentComplaint['managed_by']),
             _buildInfoRow(
-                'complainer'.tr(), _currentComplaint['complainer_user_name']),
-            _buildInfoRow(
-                'target'.tr(), _currentComplaint['target_user_name']),
+              'complainer'.tr(),
+              _currentComplaint['complainer_user_name'],
+            ),
+            _buildInfoRow('target'.tr(), _currentComplaint['target_user_name']),
             if (_currentComplaint['shipment_id'] != null)
               _buildInfoRow(
-                  'shipment_id'.tr(), _currentComplaint['shipment_id']),
+                'shipment_id'.tr(),
+                _currentComplaint['shipment_id'],
+              ),
             _buildInfoRow(
               'created'.tr(),
-              DateFormat("MMM dd, yyyy - hh:mm a")
-                  .format(DateTime.parse(_currentComplaint['created_at'])),
+              DateFormat(
+                "MMM dd, yyyy - hh:mm a",
+              ).format(DateTime.parse(_currentComplaint['created_at'])),
             ),
           ],
         ),
@@ -367,9 +687,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
       child: Row(
         children: [
           SizedBox(width: 110, child: Text(label)),
-          Expanded(
-            child: Text(value?.toString() ?? "N/A"),
-          ),
+          Expanded(child: Text(value?.toString() ?? "N/A")),
         ],
       ),
     );
@@ -377,32 +695,27 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
 
   Widget _buildTimeline() {
     final history = _currentComplaint['history'] as Map?;
-    final events = List<Map<String, dynamic>>.from(
-      (history?['events'] ?? []),
-    );
+    final events = List<Map<String, dynamic>>.from((history?['events'] ?? []));
 
     if (events.isEmpty) {
       events.add({
         'type': 'created',
         'title': 'Complaint Filed',
         'description': 'Complaint submitted',
-        'timestamp': _currentComplaint['created_at']
+        'timestamp': _currentComplaint['created_at'],
       });
     }
 
     events.sort(
-          (a, b) => DateTime.parse(b['timestamp'])
-          .compareTo(DateTime.parse(a['timestamp'])),
+          (a, b) => DateTime.parse(
+        b['timestamp'],
+      ).compareTo(DateTime.parse(a['timestamp'])),
     );
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            ...events.map((e) => _buildTimelineItem(e)),
-          ],
-        ),
+        child: Column(children: [...events.map((e) => _buildTimelineItem(e))]),
       ),
     );
   }
@@ -429,17 +742,20 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(event['title'] ?? ''),
-              Text(event['description'] ?? '',
-                  style: TextStyle(color: Colors.grey.shade700)),
               Text(
-                DateFormat("MMM dd, yyyy - hh:mm a")
-                    .format(DateTime.parse(event['timestamp'])),
+                event['description'] ?? '',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              Text(
+                DateFormat(
+                  "MMM dd, yyyy - hh:mm a",
+                ).format(DateTime.parse(event['timestamp'])),
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
             ],
           ),
-        )
+        ),
       ],
     );
   }
@@ -493,8 +809,10 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
   }
 
   Future<bool?> _showConfirmationDialog(
-      String title, String content,
-      {bool isDestructive = false}) {
+      String title,
+      String content, {
+        bool isDestructive = false,
+      }) {
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -516,7 +834,6 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
       ),
     );
   }
-
 
   Map<String, dynamic> _getStatusConfig(String status) {
     switch (status) {
