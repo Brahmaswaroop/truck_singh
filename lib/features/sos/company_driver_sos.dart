@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CompanyDriverEmergencyScreen extends StatefulWidget {
   final String agentId;
@@ -23,6 +24,22 @@ class _CompanyDriverEmergencyScreenState
   final Set<String> selectedOptions = {};
   bool _isSending = false;
 
+  // Indian Highway Emergency Numbers
+  final List<Map<String, String>> indianHighwayHelplines = [
+    {
+      'label': 'National Highway Helpline',
+      'number': '1033',
+      'desc': 'For accidents/breakdowns on NH'
+    },
+    {
+      'label': 'National Emergency',
+      'number': '112',
+      'desc': 'Police, Fire, Ambulance'
+    },
+    {'label': 'Police', 'number': '100', 'desc': 'Local Police Support'},
+    {'label': 'Ambulance', 'number': '108', 'desc': 'Medical Emergency'},
+  ];
+
   void toggleSelection(String option) {
     setState(() {
       if (selectedOptions.contains(option)) {
@@ -31,6 +48,22 @@ class _CompanyDriverEmergencyScreenState
         selectedOptions.add(option);
       }
     });
+  }
+
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri);
+      } else {
+        _showErrorSnackBar('Could not launch dialer for $phoneNumber');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error launching dialer: $e');
+    }
   }
 
   Future<void> sendSOSNotification() async {
@@ -66,7 +99,6 @@ class _CompanyDriverEmergencyScreenState
         },
         // body: jsonEncode({'ownerId': ownerId, 'sosData': sosData}),
         body: jsonEncode({'agentId': agentId, 'sosData': sosData}),
-
       );
 
       if (response.statusCode == 200) {
@@ -152,6 +184,27 @@ class _CompanyDriverEmergencyScreenState
                 ),
               if (showMessageBox) const SizedBox(height: 20),
               if (showMessageBox) _buildSubmitButton(),
+
+              // --- NEW: Highway Helplines Section ---
+              const SizedBox(height: 30),
+              const Divider(thickness: 1),
+              const SizedBox(height: 10),
+              const Text(
+                'Indian Highway Helplines',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Tap to call directly',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 10),
+              _buildHelplineList(),
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -283,6 +336,50 @@ class _CompanyDriverEmergencyScreenState
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHelplineList() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: indianHighwayHelplines.length,
+      itemBuilder: (context, index) {
+        final item = indianHighwayHelplines[index];
+        return Card(
+          elevation: 2,
+          margin: const EdgeInsets.only(bottom: 10),
+          shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.red.shade50,
+              child: const Icon(Icons.phone_in_talk, color: Colors.red),
+            ),
+            title: Text(
+              item['label']!,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(item['desc']!),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                item['number']!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
+            onTap: () => _makePhoneCall(item['number']!),
+          ),
+        );
+      },
     );
   }
 }
