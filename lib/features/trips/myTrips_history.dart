@@ -241,7 +241,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         final shipperId = s['shipper_id'];
         final assignedAgent = s['assigned_agent'];
         // Use correct key fallback
-        final assignedTruckOwner = s['assigned_truck_owner'] ?? s['assigned_truckowner'];
+        final assignedTruckOwner =
+            s['assigned_truck_owner'] ?? s['assigned_truckowner'];
 
         // If I created this shipment
         if (shipperId == customUserId) {
@@ -261,7 +262,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       }
 
       // Batch fetch manager names
-      final managerNames = await _supabaseService.getUserNames(managerIdsToFetch.toList());
+      final managerNames =
+      await _supabaseService.getUserNames(managerIdsToFetch.toList());
 
       // Attach manager info to shipment map
       for (var s in res) {
@@ -271,13 +273,18 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         if (shipperId == customUserId) {
           String? managerId;
           final String? agentId = s['assigned_agent']?.toString();
-          final String? truckOwnerId = (s['assigned_truck_owner'] ?? s['assigned_truckowner'])?.toString();
+          final String? truckOwnerId =
+          (s['assigned_truck_owner'] ?? s['assigned_truckowner'])
+              ?.toString();
 
           // Robust check: valid if NOT null, NOT empty, and NOT self
-          if (agentId != null && agentId.trim().isNotEmpty && agentId != customUserId) {
+          if (agentId != null &&
+              agentId.trim().isNotEmpty &&
+              agentId != customUserId) {
             managerId = agentId;
-          }
-          else if (truckOwnerId != null && truckOwnerId.trim().isNotEmpty && truckOwnerId != customUserId) {
+          } else if (truckOwnerId != null &&
+              truckOwnerId.trim().isNotEmpty &&
+              truckOwnerId != customUserId) {
             managerId = truckOwnerId;
           }
 
@@ -520,8 +527,11 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      builder:
+          (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         title: Text('filterByStatus'.tr()),
         content: SingleChildScrollView(
           child: RadioGroup<String>(
@@ -536,7 +546,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
             },
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: statuses.map((status) {
+              children:
+              statuses.map((status) {
                 return RadioListTile<String>(
                   value: status,
                   title: Text(status.tr()),
@@ -564,7 +575,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         if (pdfUrl != null && pdfUrl.isNotEmpty) {
           try {
             final response = await http.head(Uri.parse(pdfUrl));
-            pdfStates[shipmentId] = response.statusCode == 200
+            pdfStates[shipmentId] =
+            response.statusCode == 200
                 ? PdfState.uploaded
                 : PdfState.notGenerated;
           } catch (_) {
@@ -582,9 +594,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     _fetchedBillingAddress = await fetchBillingAddressForShipment(shipment);
     if (_fetchedBillingAddress == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('billing_address_not_found'.tr())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('billing_address_not_found'.tr())),
+      );
       return;
     }
 
@@ -618,7 +630,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
       shipment: shipment,
       price: _priceController.text,
       companyName: _companyNameController.text,
-      companyAddress: _selectedCompanyAddress != null
+      companyAddress:
+      _selectedCompanyAddress != null
           ? '${_selectedCompanyAddress!.flatNo}, ${_selectedCompanyAddress!.streetName}, ${_selectedCompanyAddress!.cityName}, ${_selectedCompanyAddress!.district}, ${_selectedCompanyAddress!.zipCode}'
           : '',
       companyMobile: _cMobileNumberController.text,
@@ -771,7 +784,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder:
+          (ctx) => AlertDialog(
         title: Text('Delete Invoice?'),
         content: Text('Are you sure you want to delete this invoice?'),
         actions: [
@@ -896,7 +910,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
         ShareParams(
           text: 'Here is the invoice for shipment $shipmentId: $publicUrl',
           subject: 'Invoice for $shipmentId',
-          sharePositionOrigin: box != null
+          sharePositionOrigin:
+          box != null
               ? box.localToGlobal(Offset.zero) & box.size
               : null,
         ),
@@ -1176,7 +1191,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => StatefulBuilder(
+      builder:
+          (_) => StatefulBuilder(
         builder: (context, setDialogState) {
           void recalculateTotals() {
             final price = double.tryParse(_priceController.text) ?? 0.0;
@@ -1202,7 +1218,10 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 450, maxHeight: 600),
+              constraints: const BoxConstraints(
+                maxWidth: 450,
+                maxHeight: 600,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1299,7 +1318,10 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                           ),
 
                           const SizedBox(height: 16),
-                          _buildSectionHeader("Invoice Data", Icons.receipt),
+                          _buildSectionHeader(
+                            "Invoice Data",
+                            Icons.receipt,
+                          ),
                           _buildTextField(
                             controller: _invoiceNumberController,
                             label: "invoice_no".tr(),
@@ -1330,7 +1352,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                           Container(
                             margin: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
+                              border: Border.all(
+                                color: Colors.grey.shade300,
+                              ),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: RadioGroup<TaxType>(
@@ -1394,7 +1418,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
-                                        color: Theme.of(context).primaryColor,
+                                        color:
+                                        Theme.of(context).primaryColor,
                                       ),
                                     ),
                                   ],
@@ -1418,7 +1443,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
                             ),
                             child: Text("cancel".tr()),
                           ),
@@ -1437,7 +1464,9 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
                             ),
                             child: Text("generate".tr()),
                           ),
@@ -1686,19 +1715,15 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
             );
           },
 
-          // 👇 Invoice Actions: Enabled for Shipper on ALL shipments (active or completed)
-          onPreviewInvoice: (isShipper)
-              ? () => previewInvoice(context, shipmentId)
-              : null,
+          // 👇 Invoice Actions: Enabled for EVERYONE (Shipper + Creator)
+          // Previously: (isShipper) ? ... : null
+          // Now: Always enabled so Creator (Agent/TruckOwner) can also view/share
+          onPreviewInvoice: () => previewInvoice(context, shipmentId),
 
-          onDownloadInvoice: (isShipper)
-              ? () async => await downloadInvoice(shipment)
-              : null,
+          onDownloadInvoice: () async => await downloadInvoice(shipment),
 
           // REQUEST: Only SHIPPERS can request (enabled for all statuses)
-          onRequestInvoice: (isShipper)
-              ? () => requestInvoice(shipment)
-              : null,
+          onRequestInvoice: (isShipper) ? () => requestInvoice(shipment) : null,
 
           // GENERATE: Only NON-SHIPPERS (Transporters/Agents) can generate (restricted to completed)
           onGenerateInvoice: (status == "completed" && !isShipper)
@@ -1710,9 +1735,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
               ? () async => await confirmAndDelete(context, shipment)
               : null,
 
-          onShareInvoice: (isShipper)
-              ? () async => await shareInvoice(shipment)
-              : null,
+          onShareInvoice: () async => await shareInvoice(shipment),
         );
       },
     );
@@ -1721,7 +1744,8 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
   Widget buildSkeletonLoader() {
     return ListView.builder(
       itemCount: 5,
-      itemBuilder: (_, __) => Padding(
+      itemBuilder:
+          (_, __) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Shimmer.fromColors(
           baseColor: Colors.grey.shade300,
@@ -1786,6 +1810,7 @@ class _MyTripsHistoryPageState extends State<MyTripsHistory> {
                     statusFilter = 'All';
                     selectedYear = null;
                     selectedMonth = null;
+                    searchQuery = '';
                     applyFilters();
                   });
                 },
@@ -1810,7 +1835,9 @@ class ShipmentSearchDelegate extends SearchDelegate<String> {
   ];
 
   @override
-  Widget? buildLeading(BuildContext context) => IconButton(
+  Widget? buildLeading(
+      BuildContext context,
+      ) => IconButton(
     icon: const Icon(Icons.arrow_back),
     onPressed: () => close(context, ''),
   );
@@ -1830,7 +1857,8 @@ class ShipmentSearchDelegate extends SearchDelegate<String> {
       );
     }
 
-    final results = shipments.where((s) {
+    final results =
+    shipments.where((s) {
       final id = s['shipment_id']?.toString().toLowerCase() ?? '';
       final pickup = s['pickup']?.toString().toLowerCase() ?? '';
       final drop = s['drop']?.toString().toLowerCase() ?? '';

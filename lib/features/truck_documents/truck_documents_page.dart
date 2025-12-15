@@ -160,7 +160,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
       if (_userRole == UserRole.agent || _userRole == UserRole.truckOwner) {
         trucks = await supabase
             .from('trucks')
-            .select('id, truck_number, truck_admin, make, model, year, vehicle_type')
+            .select(
+            'id, truck_number, truck_admin, make, model, year, vehicle_type')
             .eq('truck_admin', _loggedInUserId!)
             .order('truck_number');
         print('Raw trucks data from database: $trucks');
@@ -181,7 +182,8 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           if (truckNumbers.isNotEmpty) {
             trucks = await supabase
                 .from('trucks')
-                .select('id, truck_number, truck_admin, make, model, year, vehicle_type')
+                .select(
+                'id, truck_number, truck_admin, make, model, year, vehicle_type')
                 .inFilter('truck_number', truckNumbers)
                 .order('truck_number');
           }
@@ -207,6 +209,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
       print('Truck IDs to fetch documents for: $truckIds');
 
+      // CHANGED: Reverted to 'truck_documents_old' as this table has the data and correct schema
       final uploadedDocs = await supabase
           .from('truck_documents_old')
           .select('truck_id, doc_type, uploaded_at, file_path, custom_user_id')
@@ -405,6 +408,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
 
       // Delete existing document if it exists
       try {
+        // CHANGED: Reverted to 'truck_documents_old'
         final existingDocs = await supabase
             .from('truck_documents_old')
             .select('file_path')
@@ -425,6 +429,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
           }
 
           // Mark old documents as inactive
+          // CHANGED: Reverted to 'truck_documents_old'
           await supabase
               .from('truck_documents_old')
               .update({'is_active': false})
@@ -450,6 +455,7 @@ class _TruckDocumentsPageState extends State<TruckDocumentsPage>
         'custom_user_id': _loggedInUserId,
       };
 
+      // CHANGED: Reverted to 'truck_documents_old'
       await supabase.from('truck_documents_old').insert(insertData);
       if (_loggedInUserId != null) {
         final uploaderName = _loggedInUserName ?? _loggedInUserId!;

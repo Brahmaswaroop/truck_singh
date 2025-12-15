@@ -21,12 +21,14 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
   bool _isActionLoading = false;
   bool _isLoading = true;
   RealtimeChannel? _complaintChannel;
+  late Future<String?> _userIdFuture;
   final _chat = ChatService();
 
   @override
   void initState() {
     super.initState();
     _currentComplaint = widget.complaint;
+    _userIdFuture = UserDataService.getCustomUserId();
     _initializePage();
   }
 
@@ -436,11 +438,6 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     });
   }
 
-  Future<String?> get _customUserId async {
-    final userId = await UserDataService.getCustomUserId();
-    return userId;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -490,7 +487,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     final canEdit = isComplaintOwner && status != 'Resolved';
 
     return FutureBuilder<String?>(
-      future: _customUserId,
+      future: _userIdFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(
@@ -531,19 +528,16 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
             }
           } else {
             actions.add(
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () =>
-                      _confirmComplaintChat(
-                        _currentComplaint['id'],
-                        _currentComplaint['complainer_user_name'],
-                      ),
-                  icon: const Icon(Icons.chat),
-                  label: Text('chat'.tr()),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
+              ElevatedButton.icon(
+                onPressed: () => _confirmComplaintChat(
+                  _currentComplaint['id'],
+                  _currentComplaint['complainer_user_name'],
+                ),
+                icon: const Icon(Icons.chat),
+                label: Text('chat'.tr()),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
                 ),
               ),
             );
@@ -601,6 +595,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
           child: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: List.generate(actions.length, (index) {
                 return Padding(
@@ -783,7 +778,35 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
           onTap: () => _showImageDialog(url),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(url, height: 200, fit: BoxFit.cover),
+            child: Image.network(
+              url,
+              height: 200,
+              width: double.infinity, // Ensure it fills width
+              fit: BoxFit.cover,
+              // Add this error builder
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  height: 200,
+                  color: Colors.grey[300],
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image, color: Colors.grey),
+                        Text("Image failed to load"),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return SizedBox(
+                  height: 200,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              },
+            ),
           ),
         ),
       ),

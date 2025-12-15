@@ -314,7 +314,7 @@ class _DriverStatusChangerState extends State<DriverStatusChanger> {
     margin: const EdgeInsets.all(20),
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: color ?? Colors.white,
+      color: color ?? Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(16),
     ),
     child: child,
